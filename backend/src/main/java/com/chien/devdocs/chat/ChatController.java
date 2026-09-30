@@ -12,14 +12,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/chat")
 public class ChatController {
 
-    private final RagService ragService;
+    private final ChatService chatService;
 
-    public ChatController(RagService ragService) {
-        this.ragService = ragService;
+    public ChatController(ChatService chatService) {
+        this.chatService = chatService;
     }
 
+    /** Body: {"question": "...", "topic": "SPRING", "topK": 5, "mode": "MANUAL"} — chỉ question là bắt buộc. */
     @PostMapping
     public ChatResponse chat(@Valid @RequestBody ChatRequest request) {
-        return ragService.ask(request);
+        return chatService.answer(request).toResponse();
     }
 }

@@ -37,7 +37,7 @@ class EvaluationServiceTest {
         retriever = mock(Retriever.class);
         dataset = mock(EvalDataset.class);
         store = mock(VectorStore.class);
-        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 200, 10, 30,
+        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 200, 10, 30,
                 DataSize.ofMegabytes(20), "./storage");
         service = new EvaluationService(retriever, store, dataset, props);
     }

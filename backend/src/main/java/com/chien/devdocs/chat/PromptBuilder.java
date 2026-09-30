@@ -58,7 +58,7 @@ public class PromptBuilder {
                 sb.append("\n\n");
             }
             sb.append('[').append(i + 1).append("] (").append(sourceLabel(chunks.get(i))).append(")\n")
-                    .append(chunks.get(i).getText().strip());
+                    .append(PromptInjectionGuard.sanitize(chunks.get(i).getText().strip()));
         }
         return sb.toString();
     }

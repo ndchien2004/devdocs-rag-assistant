@@ -21,11 +21,8 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,19 +43,15 @@ public class IngestionService {
 
     private final SourceDocumentRepository repository;
     private final VectorStore vectorStore;
-    private final DocumentLoader loader;
-    private final TextCleaner cleaner;
-    private final ChunkSplitter splitter;
+    private final ChunkingPipeline pipeline;
     private final FileStorage storage;
     private final RagProperties props;
 
-    public IngestionService(SourceDocumentRepository repository, VectorStore vectorStore, DocumentLoader loader,
-                            TextCleaner cleaner, ChunkSplitter splitter, FileStorage storage, RagProperties props) {
+    public IngestionService(SourceDocumentRepository repository, VectorStore vectorStore, ChunkingPipeline pipeline,
+                            FileStorage storage, RagProperties props) {
         this.repository = repository;
         this.vectorStore = vectorStore;
-        this.loader = loader;
-        this.cleaner = cleaner;
-        this.splitter = splitter;
+        this.pipeline = pipeline;
         this.storage = storage;
         this.props = props;
     }
@@ -140,28 +133,25 @@ public class IngestionService {
         doc.markProcessing();
         doc = repository.save(doc);
         try {
-            FileType type = FileType.fromFileName(doc.getFileName()).orElseThrow();
-
             // Xóa chunk cũ trước (re-index / nạp lại) để không bị nhân đôi.
             deleteChunks(doc.getId());
 
-            DocumentLoader.LoadedFile loaded = loader.load(storage.resolve(doc.getStoragePath()), type); // [5]
-            List<Document> pages = cleaner.cleanPages(loaded.pages(), props.minPageChars());          // [6]
-            if (pages.isEmpty()) {
+            ChunkingPipeline.Result result = pipeline.chunk(doc);                          // [5] → [8]
+            if (result.usablePages() == 0 || result.chunks().isEmpty()) {
                 log.warn("Document {} has no extractable text", doc.getId());
                 doc.markFailed(NO_TEXT_MESSAGE);
                 return repository.save(doc);
             }
-            List<Document> chunks = withMetadata(splitter.split(pages), doc);                          // [7] [8]
+            List<Document> chunks = result.chunks();
 
             long embedStart = System.currentTimeMillis();
-            vectorStore.add(chunks);                                                                   // [9]
+            vectorStore.add(chunks);                                                       // [9]
             long embedMs = System.currentTimeMillis() - embedStart;
 
-            doc.markIndexed(loaded.pageCount(), chunks.size());                                        // [10]
+            doc.markIndexed(result.pageCount(), chunks.size());                            // [10]
             doc = repository.save(doc);
             log.info("Indexed {} ({}): {} pages → {} usable pages → {} chunks, embed+store {} ms, total {} ms",
-                    doc.getId(), doc.getFileName(), loaded.pageCount(), pages.size(), chunks.size(),
+                    doc.getId(), doc.getFileName(), result.pageCount(), result.usablePages(), chunks.size(),
                     embedMs, System.currentTimeMillis() - start);
             return doc;
         } catch (RuntimeException e) {
@@ -175,40 +165,12 @@ public class IngestionService {
         }
     }
 
-    /** BR-ING-06: 5 metadata bắt buộc cho mỗi chunk. Metadata thừa của reader bị bỏ đi. */
-    List<Document> withMetadata(List<Document> chunks, SourceDocument doc) {
-        List<Document> result = new ArrayList<>(chunks.size());
-        for (int i = 0; i < chunks.size(); i++) {
-            Document chunk = chunks.get(i);
-            Map<String, Object> md = new HashMap<>();
-            md.put(ChunkMetadata.DOCUMENT_ID, doc.getId().toString());
-            md.put(ChunkMetadata.FILE_NAME, doc.getFileName());
-            md.put(ChunkMetadata.PAGE_NUMBER, pageNumber(chunk));
-            md.put(ChunkMetadata.TOPIC, doc.getTopic().name());
-            md.put(ChunkMetadata.CHUNK_INDEX, i);
-            Object section = chunk.getMetadata().get(DocumentLoader.SECTION_TITLE);
-            if (section != null) {
-                md.put(ChunkMetadata.SECTION_TITLE, section);
-            }
-            result.add(Document.builder().text(chunk.getText()).metadata(md).build());
-        }
-        return result;
-    }
-
     private void deleteChunks(UUID documentId) {
         // Dùng FilterExpressionBuilder thay vì ghép chuỗi → không có nguy cơ injection vào filter.
         vectorStore.delete(new FilterExpressionBuilder().eq(ChunkMetadata.DOCUMENT_ID, documentId.toString()).build());
     }
 
     // ------------------------------------------------------------------ helpers
-
-    private static int pageNumber(Document chunk) {
-        Object value = chunk.getMetadata().get(DocumentLoader.PAGE_NUMBER);
-        if (value instanceof Number n) {
-            return n.intValue();
-        }
-        return value != null ? Integer.parseInt(value.toString()) : 0;
-    }
 
     private static String originalFileName(MultipartFile file) {
         String name = StringUtils.getFilename(StringUtils.cleanPath(

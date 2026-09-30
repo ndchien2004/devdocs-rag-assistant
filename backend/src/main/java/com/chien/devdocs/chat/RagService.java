@@ -24,8 +24,6 @@ import java.util.List;
 public class RagService {
 
     private static final Logger log = LoggerFactory.getLogger(RagService.class);
-    /** Chuỗi nhận diện câu "không tìm thấy" do LLM trả về theo system prompt (BR-QRY-03). */
-    private static final String NOT_FOUND_MARKER = "không tìm thấy nội dung liên quan";
 
     private final Retriever retriever;
     private final PromptBuilder promptBuilder;
@@ -51,6 +49,10 @@ public class RagService {
     }
 
     public ChatResponse ask(ChatRequest request) {
+        return answer(request).toResponse();
+    }
+
+    public RagAnswer answer(ChatRequest request) {
         long start = System.currentTimeMillis();
         String question = normalize(request.question());                                    // [2]
         int topK = request.topKOrDefault(props.topK());
@@ -66,7 +68,7 @@ public class RagService {
         if (hits.isEmpty()) {                                                               // BR-QRY-03
             long total = System.currentTimeMillis() - start;
             saveLog(question, request, topK, 0, null, false, retrievalMs, null, total);
-            return ChatResponse.notFound(total);
+            return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
         }
 
         PromptBuilder.BuiltContext context = promptBuilder.buildContext(hits, props.maxContextTokens()); // [4]
@@ -77,12 +79,13 @@ public class RagService {
         log.info("LLM: {} context chunks → {} chars answer in {} ms", context.chunks().size(),
                 answer.length(), llmMs);
 
-        boolean found = !isNotFoundAnswer(answer);
+        boolean found = !RefusalDetector.isRefusal(answer);
         List<SourceDto> sources = found ? sourceMapper.toSources(context.chunks(), answer) : List.of(); // [6]
 
         long total = System.currentTimeMillis() - start;
         saveLog(question, request, topK, hits.size(), maxScore, found, retrievalMs, llmMs, total);  // [7]
-        return new ChatResponse(found ? answer : ChatResponse.NOT_FOUND_ANSWER, found, sources, total);
+        return new RagAnswer(found ? answer : ChatResponse.NOT_FOUND_ANSWER, found, sources, total, true,
+                hits.size());
     }
 
     private String callLlm(String context, String question) {
@@ -101,10 +104,6 @@ public class RagService {
             }
             throw e;
         }
-    }
-
-    static boolean isNotFoundAnswer(String answer) {
-        return answer.isBlank() || normalize(answer).toLowerCase().contains(NOT_FOUND_MARKER);
     }
 
     static String normalize(String text) {

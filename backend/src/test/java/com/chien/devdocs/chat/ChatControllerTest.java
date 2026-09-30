@@ -1,6 +1,5 @@
 package com.chien.devdocs.chat;
 
-import com.chien.devdocs.chat.dto.ChatResponse;
 import com.chien.devdocs.common.exception.AiServiceUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +24,7 @@ class ChatControllerTest {
     MockMvc mvc;
 
     @MockitoBean
-    RagService ragService;
+    ChatService chatService;
 
     private org.springframework.test.web.servlet.ResultActions chat(String json) throws Exception {
         return mvc.perform(post("/api/v1/chat").contentType(MediaType.APPLICATION_JSON).content(json));
@@ -33,7 +32,7 @@ class ChatControllerTest {
 
     @Test
     void validQuestionReturnsAnswer() throws Exception {
-        when(ragService.ask(any())).thenReturn(new ChatResponse("Trả lời [1]", true, List.of(), 42));
+        when(chatService.answer(any())).thenReturn(new RagAnswer("Trả lời [1]", true, List.of(), 42, true, 1));
 
         chat("""
                 {"question": "REQUIRED là gì?", "topic": "SPRING", "topK": 5}""")
@@ -71,7 +70,7 @@ class ChatControllerTest {
 
     @Test
     void ollamaDownIs503() throws Exception {                    // TC-QRY-09
-        when(ragService.ask(any())).thenThrow(new AiServiceUnavailableException(new ConnectException("refused")));
+        when(chatService.answer(any())).thenThrow(new AiServiceUnavailableException(new ConnectException("refused")));
 
         chat("""
                 {"question": "hi"}""")

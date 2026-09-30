@@ -12,6 +12,10 @@ spring:
   mvc:
     problemdetails:
       enabled: true               # lỗi trả về theo RFC 9457
+  http:
+    clients:                      # RestClient gọi Ollama — hết thời gian → 503 thay vì treo request
+      connect-timeout: 5s
+      read-timeout: 180s
   servlet:
     multipart:
       max-file-size: 20MB
@@ -27,6 +31,9 @@ spring:
       chat:
         model: ${CHAT_MODEL:qwen2.5:7b}
         temperature: 0.2          # thấp để câu trả lời bám tài liệu, ít "sáng tạo"
+        # Giới hạn token sinh ra. Mặc định Ollama không giới hạn: model nhỏ đôi khi lặp vô tận
+        # (đã gặp thật: qwen2.5:3b sinh 38.000+ token cho một câu hỏi, request treo mãi).
+        num-predict: 1024
       embedding:
         model: ${EMBEDDING_MODEL:bge-m3}
     vectorstore:
@@ -41,7 +48,10 @@ app:
     top-k: 5
     similarity-threshold: 0.5
     max-context-tokens: 3000
-    chunk-size: 500
+    # Chọn theo Phase 4 (E1 + E4): chunk 150 token, overlap 60 (OverlapTextSplitter).
+    # Baseline của đặc tả là chunk-size 500, chunk-overlap 0 (TokenTextSplitter).
+    chunk-size: 150
+    chunk-overlap: 60
     min-chunk-size-chars: 200
     min-chunk-length-to-embed: 10
     min-page-chars: 30

@@ -23,6 +23,8 @@ public record RagProperties(
 
         // --- Ingestion ---
         @DefaultValue("500") @Min(50) int chunkSize,
+        /** 0 = TokenTextSplitter (baseline); &gt; 0 = OverlapTextSplitter (thí nghiệm E4). */
+        @DefaultValue("0") @Min(0) int chunkOverlap,
         @DefaultValue("200") @Min(0) int minChunkSizeChars,
         @DefaultValue("10") @Min(0) int minChunkLengthToEmbed,
         @DefaultValue("30") @Min(0) int minPageChars,

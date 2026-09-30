@@ -60,10 +60,16 @@ class IngestionServiceTest {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repository.findByChecksum(any())).thenReturn(Optional.empty());
 
-        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 20, 5, 30,
+        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 20, 5, 30,
                 DataSize.ofMegabytes(20), storageDir.toString());
-        service = new IngestionService(repository, vectorStore, new DocumentLoader(), new TextCleaner(),
-                new ChunkSplitter(props), new FileStorage(props), props);
+        service = newService(props);
+    }
+
+    private IngestionService newService(RagProperties props) {
+        FileStorage storage = new FileStorage(props);
+        var pipeline = new ChunkingPipeline(new DocumentLoader(), new TextCleaner(), new ChunkSplitter(props),
+                storage, props);
+        return new IngestionService(repository, vectorStore, pipeline, storage, props);
     }
 
     private static MockMultipartFile markdown(String name, String content) {
@@ -128,10 +134,9 @@ class IngestionServiceTest {
 
     @Test
     void rejectsFileLargerThanLimit() {
-        RagProperties small = new RagProperties(5, 0.5, 3000, 500, 20, 5, 30,
+        RagProperties small = new RagProperties(5, 0.5, 3000, 500, 0, 20, 5, 30,
                 DataSize.ofBytes(10), storageDir.toString());
-        var svc = new IngestionService(repository, vectorStore, new DocumentLoader(), new TextCleaner(),
-                new ChunkSplitter(small), new FileStorage(small), small);
+        var svc = newService(small);
 
         assertThatThrownBy(() -> svc.upload(markdown("big.md", MARKDOWN), Topic.SPRING))
                 .isInstanceOf(FileTooLargeException.class);

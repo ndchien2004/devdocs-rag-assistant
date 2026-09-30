@@ -44,7 +44,7 @@ class RagServiceTest {
         retriever = mock(Retriever.class);
         chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
         queryLogRepository = mock(QueryLogRepository.class);
-        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 200, 10, 30,
+        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 200, 10, 30,
                 DataSize.ofMegabytes(20), "./storage");
         service = new RagService(retriever, new PromptBuilder(), new SourceMapper(), chatClient,
                 queryLogRepository, props,
@@ -139,9 +139,27 @@ class RagServiceTest {
     }
 
     @Test
-    void recognizesNotFoundAnswerVariants() {
-        assertThat(RagService.isNotFoundAnswer("Mình không tìm thấy nội dung liên quan trong tài liệu đã nạp.")).isTrue();
-        assertThat(RagService.isNotFoundAnswer("  ")).isTrue();
-        assertThat(RagService.isNotFoundAnswer("REQUIRED là mặc định [1].")).isFalse();
+    void recognizesRefusalVariants() {
+        assertThat(RefusalDetector.isRefusal("Mình không tìm thấy nội dung liên quan trong tài liệu đã nạp.")).isTrue();
+        assertThat(RefusalDetector.isRefusal("I'm sorry, but I can’t answer that question.")).isTrue();
+        // Câu từ chối thật của qwen2.5:3b với QuestionAnswerAdvisor (E5, Q28):
+        assertThat(RefusalDetector.isRefusal(
+                "Xin lỗi, nhưng thông tin về đội vô địch World Cup 2022 không được tìm thấy trong context.")).isTrue();
+        assertThat(RefusalDetector.isRefusal(
+                "The context provided does not contain information about why to use StringBuilder.")).isTrue();
+        assertThat(RefusalDetector.isRefusal("  ")).isTrue();
+        assertThat(RefusalDetector.isRefusal("REQUIRED là mặc định [1].")).isFalse();
+    }
+
+    @Test
+    void answerReportsWhetherLlmWasCalled() {
+        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of());
+        assertThat(service.answer(new ChatRequest("x", null, null)).llmCalled()).isFalse();
+
+        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of(hit("y", 1, .9)));
+        llmAnswers("Trả lời [1].");
+        RagAnswer answer = service.answer(new ChatRequest("x", null, null));
+        assertThat(answer.llmCalled()).isTrue();
+        assertThat(answer.retrievedCount()).isEqualTo(1);
     }
 }
