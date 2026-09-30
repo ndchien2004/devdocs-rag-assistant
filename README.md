@@ -366,7 +366,7 @@ cd backend && ./mvnw verify      # unit + integration test + kiểm tra coverage
 | E2E UI | `node frontend/scripts/e2e-screenshots.mjs` (cần backend + frontend + Chrome/Edge) |
 | Chất lượng RAG | `./scripts/run-eval.sh`, `./scripts/run-experiments.sh`, `python scripts/check_prompt_injection.py 20` |
 
-Kết quả hiện tại: **92 test pass**; coverage dòng của service layer 87–100% (tổng 91.5%), JaCoCo chặn build nếu < 70%.
+Kết quả hiện tại: **92 test pass**; coverage dòng của service layer 87–100% (tổng 91.7%), JaCoCo chặn build nếu < 70%.
 GitHub Actions chạy `mvn verify` + build frontend cho mỗi push.
 
 Đối chiếu các test case trong đặc tả (mục 14):
