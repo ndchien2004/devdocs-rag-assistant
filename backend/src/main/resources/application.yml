@@ -2,7 +2,7 @@ spring:
   application:
     name: devdocs-rag-assistant
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/devdocs}
+    url: ${DB_URL:jdbc:postgresql://localhost:${DB_PORT:5432}/devdocs}
     username: ${DB_USERNAME:devdocs}
     password: ${DB_PASSWORD:devdocs}
   jpa:

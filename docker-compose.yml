@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME:-devdocs}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-devdocs}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"   # đổi DB_PORT trong .env nếu 5432 đã bị chiếm
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,14 +23,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama:/root/.ollama
-    # Uncomment if you have an NVIDIA GPU + NVIDIA Container Toolkit
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # NVIDIA GPU: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 volumes:
   pgdata:
