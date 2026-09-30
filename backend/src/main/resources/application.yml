@@ -9,17 +9,21 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate          # schema do Flyway quản lý
+  mvc:
+    problemdetails:
+      enabled: true               # lỗi trả về theo RFC 9457
   servlet:
     multipart:
       max-file-size: 20MB
-      max-request-size: 20MB
+      max-request-size: 21MB
 
   ai:
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       init:
-        pull-model-strategy: when_missing   # tự pull model nếu Ollama chưa có
-        timeout: 15m
+        # never: pull model thủ công (docker exec ... ollama pull). when_missing: tự pull khi khởi động.
+        pull-model-strategy: ${OLLAMA_PULL_STRATEGY:never}
+        timeout: 30m
       chat:
         model: ${CHAT_MODEL:qwen2.5:7b}
         temperature: 0.2          # thấp để câu trả lời bám tài liệu, ít "sáng tạo"
@@ -31,6 +35,23 @@ spring:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         dimensions: 1024          # phải bằng số chiều của embedding model (bge-m3 = 1024)
+
+app:
+  rag:
+    top-k: 5
+    similarity-threshold: 0.5
+    max-context-tokens: 3000
+    chunk-size: 500
+    min-chunk-size-chars: 200
+    min-chunk-length-to-embed: 10
+    min-page-chars: 30
+    max-file-size: 20MB
+    storage-dir: ${STORAGE_DIR:./storage}
+
+server:
+  tomcat:
+    # Mặc định Tomcat chỉ "nuốt" 2MB body thừa rồi đóng kết nối → client không nhận được 413.
+    max-swallow-size: 50MB
 
 springdoc:
   swagger-ui:

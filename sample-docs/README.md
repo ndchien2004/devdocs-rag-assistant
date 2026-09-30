@@ -4,7 +4,7 @@ Bộ tài liệu nhỏ **tự viết cho dự án này** để demo và làm b�
 
 | File | Ngôn ngữ | Topic | Đơn vị "trang" |
 |---|---|---|---|
-| `01_Java_Core.md` | Tiếng Việt | `JAVA` | mục (heading) — 11 mục |
+| `01_Java_Core.md` | Tiếng Việt | `JAVA` | mục (heading) — 12 mục |
 | `02_Spring_Boot.pdf` | English | `SPRING` | trang PDF — 11 trang |
 | `03_Hibernate_JPA.pdf` | English | `HIBERNATE` | trang PDF — 10 trang |
 | `04_SQL_Database.md` | Tiếng Việt | `DATABASE` | mục (heading) — 11 mục |
