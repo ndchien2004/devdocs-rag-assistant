@@ -1,40 +1,52 @@
-import { useState } from 'react'
-
 export const sourceElementId = (messageId, index) => `src-${messageId}-${index}`
 
-function location(source) {
-  if (source.sectionTitle) return `mục ${source.pageNumber}: ${source.sectionTitle}`
-  return `trang ${source.pageNumber}`
+function location(source, short = false) {
+  if (source.sectionTitle) return short ? `mục ${source.pageNumber}` : `mục ${source.pageNumber}: ${source.sectionTitle}`
+  return short ? `tr. ${source.pageNumber}` : `trang ${source.pageNumber}`
 }
 
-function SourceItem({ messageId, source }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <li id={sourceElementId(messageId, source.index)} className="rounded px-2 py-1.5">
-      <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-        <span className="font-semibold text-sky-700">[{source.index}]</span>
-        <span className="font-medium">{source.fileName}</span>
-        <span className="text-slate-500">· {location(source)}</span>
-        {source.score != null && <span className="text-slate-400">· {source.score.toFixed(2)}</span>}
-        <button onClick={() => setOpen(!open)} className="ml-auto text-xs text-sky-700 hover:underline">
-          {open ? '▾ ẩn đoạn trích' : '▸ xem đoạn trích'}
-        </button>
-      </div>
-      {open && <p className="mt-1 border-l-2 border-slate-200 pl-3 text-sm text-slate-600">{source.snippet}</p>}
-    </li>
-  )
-}
-
-export default function SourceList({ messageId, sources }) {
+/** Nguồn dạng "pill"; bấm để xem đoạn trích (mỗi lúc một nguồn). */
+export default function SourceList({ messageId, sources, openIndex, onToggle }) {
   if (!sources?.length) return null
+  const open = sources.find((s) => s.index === openIndex)
+
   return (
-    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
-      <div className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Nguồn</div>
-      <ul>
-        {sources.map((s) => (
-          <SourceItem key={s.index} messageId={messageId} source={s} />
-        ))}
-      </ul>
+    <div className="mt-4">
+      <div className="flex flex-wrap gap-1.5">
+        {sources.map((s) => {
+          const active = s.index === openIndex
+          return (
+            <button
+              key={s.index}
+              id={sourceElementId(messageId, s.index)}
+              type="button"
+              onClick={() => onToggle(active ? null : s.index)}
+              aria-expanded={active}
+              className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition ${
+                active
+                  ? 'border-accent/40 bg-accent-soft text-ink'
+                  : 'border-line bg-white text-ink-soft hover:border-line-strong hover:text-ink'
+              }`}
+            >
+              <span className="font-semibold text-accent">{s.index}</span>
+              <span className="truncate">{s.fileName}</span>
+              <span className="shrink-0 text-muted">· {location(s, true)}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {open && (
+        <div data-role="source-snippet" className="mt-2 rounded-xl border border-line bg-white px-3.5 py-3 text-sm">
+          <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted">
+            <span>
+              <span className="font-medium text-ink-soft">{open.fileName}</span> — {location(open)}
+            </span>
+            {open.score != null && <span>độ liên quan {open.score.toFixed(2)}</span>}
+          </div>
+          <p className="leading-relaxed text-ink-soft">{open.snippet}</p>
+        </div>
+      )}
     </div>
   )
 }

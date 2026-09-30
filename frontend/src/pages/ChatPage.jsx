@@ -1,13 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.js'
 import AnswerMessage from '../components/AnswerMessage.jsx'
-import TopicSelect from '../components/TopicSelect.jsx'
+import Composer from '../components/Composer.jsx'
+import { BookIcon, NewChatIcon } from '../components/icons.jsx'
 
-const MAX_QUESTION = 1000
+const SUGGESTIONS = [
+  'REQUIRED và REQUIRES_NEW khác nhau thế nào?',
+  'N+1 query là gì, khắc phục ra sao?',
+  'Vì sao phải override hashCode khi override equals?',
+]
+
 let nextId = 1
 
-export default function ChatPage({ messages, setMessages }) {
-  const [question, setQuestion] = useState('')
+function Thinking() {
+  return (
+    <div className="flex items-center gap-2.5 text-sm text-muted" role="status">
+      <span className="flex gap-1">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="thinking-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: `${i * 0.15}s` }} />
+        ))}
+      </span>
+      Đang tìm trong tài liệu…
+    </div>
+  )
+}
+
+function Disclaimer() {
+  return (
+    <p className="mt-2 text-center text-xs text-muted">
+      Câu trả lời chỉ dựa trên tài liệu đã nạp và có thể sai — hãy kiểm tra nguồn trích dẫn.
+    </p>
+  )
+}
+
+export default function ChatPage({ messages, setMessages, indexedCount, docsLoading, onOpenDocuments }) {
   const [topic, setTopic] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
@@ -16,16 +42,12 @@ export default function ChatPage({ messages, setMessages }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  async function send(e) {
-    e?.preventDefault()
-    const q = question.trim()
-    if (!q || loading) return
-
-    setMessages((prev) => [...prev, { id: nextId++, role: 'user', text: q, topic }])
-    setQuestion('')
+  async function ask(question) {
+    if (loading) return
+    setMessages((prev) => [...prev, { id: nextId++, role: 'user', text: question }])
     setLoading(true)
     try {
-      const res = await api.chat({ question: q, topic })
+      const res = await api.chat({ question, topic })
       setMessages((prev) => [...prev, { id: nextId++, role: 'assistant', ...res }])
     } catch (err) {
       setMessages((prev) => [...prev, { id: nextId++, role: 'error', text: err.message }])
@@ -34,79 +56,97 @@ export default function ChatPage({ messages, setMessages }) {
     }
   }
 
-  function onKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) send(e)
+  const composer = <Composer onSend={ask} disabled={loading} topic={topic} onTopicChange={setTopic} autoFocus />
+
+  // --- Màn hình chào (chưa có tin nhắn)
+  if (messages.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-4 pb-16">
+        <BookIcon className="mb-4 h-8 w-8 text-accent" />
+        <h1 className="text-center font-serif text-3xl tracking-tight text-ink md:text-[2.1rem]">
+          Hôm nay bạn muốn ôn lại gì?
+        </h1>
+        <p className="mt-2 text-center text-sm text-muted">
+          {docsLoading ? (
+            'Đang tải danh sách tài liệu…'
+          ) : indexedCount > 0 ? (
+            <>
+              Hỏi trên {indexedCount} tài liệu đã nạp · mọi câu trả lời đều kèm nguồn
+            </>
+          ) : (
+            <>
+              Chưa có tài liệu nào.{' '}
+              <button onClick={onOpenDocuments} className="text-accent hover:underline">
+                Nạp tài liệu
+              </button>{' '}
+              để bắt đầu.
+            </>
+          )}
+        </p>
+        <div className="mt-8 w-full max-w-2xl">{composer}</div>
+        <div className="mt-4 flex max-w-2xl flex-wrap justify-center gap-2">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => ask(s)}
+              className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-sm text-ink-soft transition hover:border-line-strong hover:bg-white hover:text-ink"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
   }
 
+  // --- Hội thoại
   return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col px-4">
-      <div className="flex items-center gap-2 py-3 text-sm">
-        <span className="text-slate-500">Chủ đề:</span>
-        <TopicSelect value={topic} onChange={setTopic} allLabel="Tất cả" />
+    <div className="flex h-full flex-col">
+      <header className="flex h-14 shrink-0 items-center justify-end px-4">
+        <button
+          onClick={() => setMessages([])}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-ink-soft transition hover:bg-hover hover:text-ink disabled:opacity-40"
+        >
+          <NewChatIcon className="h-4 w-4" />
+          Cuộc trò chuyện mới
+        </button>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl space-y-7 px-4 pt-2 pb-8">
+          {messages.map((m) => {
+            if (m.role === 'user') {
+              return (
+                <div key={m.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl bg-bubble px-4 py-2.5 leading-relaxed whitespace-pre-wrap text-ink">
+                    {m.text}
+                  </div>
+                </div>
+              )
+            }
+            if (m.role === 'error') {
+              return (
+                <div
+                  key={m.id}
+                  data-role="error"
+                  className="rounded-xl border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger"
+                >
+                  {m.text}
+                </div>
+              )
+            }
+            return <AnswerMessage key={m.id} message={m} />
+          })}
+          {loading && <Thinking />}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4">
-        {messages.length === 0 && (
-          <div className="mt-16 text-center text-slate-400">
-            <p className="text-3xl">💬</p>
-            <p className="mt-2">Hỏi bất cứ điều gì về tài liệu bạn đã nạp.</p>
-            <p className="mt-1 text-sm">Ví dụ: "Khác nhau giữa REQUIRED và REQUIRES_NEW?"</p>
-          </div>
-        )}
-
-        {messages.map((m) => {
-          if (m.role === 'user') {
-            return (
-              <div key={m.id} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-sky-600 px-4 py-2 text-white">{m.text}</div>
-              </div>
-            )
-          }
-          if (m.role === 'error') {
-            return (
-              <div
-                key={m.id}
-                data-role="error"
-                className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-              >
-                ⚠️ {m.text}
-              </div>
-            )
-          }
-          return <AnswerMessage key={m.id} message={m} />
-        })}
-
-        {loading && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-sky-600" />
-            Đang tìm trong tài liệu và soạn câu trả lời...
-          </div>
-        )}
-        <div ref={bottomRef} />
+      <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+        {composer}
+        <Disclaimer />
       </div>
-
-      <form onSubmit={send} className="border-t border-slate-200 py-3">
-        <div className="flex items-end gap-2">
-          <textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value.slice(0, MAX_QUESTION))}
-            onKeyDown={onKeyDown}
-            rows={2}
-            placeholder="Nhập câu hỏi... (Enter để gửi, Shift+Enter xuống dòng)"
-            className="flex-1 resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 focus:border-sky-500 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={loading || !question.trim()}
-            className="rounded-lg bg-sky-600 px-5 py-2.5 font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            Gửi
-          </button>
-        </div>
-        <div className="mt-1 text-right text-xs text-slate-400">
-          {question.length}/{MAX_QUESTION}
-        </div>
-      </form>
     </div>
   )
 }

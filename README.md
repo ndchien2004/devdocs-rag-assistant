@@ -341,14 +341,15 @@ thật (giải thích dài trải nhiều đoạn) cần đo lại.
 
 ## Screenshot
 
-Chụp tự động từ giao diện thật (backend + Ollama chạy local) bằng [`frontend/scripts/e2e-screenshots.mjs`](frontend/scripts/e2e-screenshots.mjs) —
-script này đồng thời là kiểm thử e2e: gõ câu hỏi, bấm trích dẫn, mở đoạn trích, hỏi câu ngoài phạm vi, mở trang tài liệu.
+Giao diện tối giản tông màu ấm: chat ở giữa, **tài liệu nằm ở thanh bên** (thu gọn thành dải icon · danh sách gọn ·
+mở rộng chiếm nửa màn hình với bảng đầy đủ). Ảnh chụp tự động từ giao diện thật (backend + Ollama chạy local) bằng
+[`frontend/scripts/e2e-screenshots.mjs`](frontend/scripts/e2e-screenshots.mjs) — script này đồng thời là kiểm thử e2e.
 
-| Trả lời có trích dẫn — bấm `[n]` để cuộn tới nguồn | Câu hỏi ngoài phạm vi — không gọi LLM |
+| Màn hình chào | Trả lời có trích dẫn — bấm số để mở đoạn nguồn |
 |---|---|
-| ![Chat](docs/screenshots/chat.png) | ![Not found](docs/screenshots/chat-not-found.png) |
+| ![Welcome](docs/screenshots/welcome.png) | ![Chat](docs/screenshots/chat.png) |
 
-| Quản lý tài liệu | Xác nhận trước khi xóa |
+| Thanh tài liệu mở rộng (½ màn hình) | Câu hỏi ngoài phạm vi · xác nhận trước khi xóa |
 |---|---|
 | ![Documents](docs/screenshots/documents.png) | ![Confirm](docs/screenshots/documents-confirm.png) |
 
@@ -411,7 +412,7 @@ chat memory + viết lại câu hỏi; hybrid search (pgvector + full-text `tsve
 
 ```text
 backend/     Spring Boot — document/ (ingestion), chat/ (RAG), evaluation/, playground/, config/, common/
-frontend/    React + Vite + Tailwind — pages/ChatPage, pages/DocumentsPage, components/, api/client.js
+frontend/    React + Vite + Tailwind — pages/ChatPage, components/ (DocumentSidebar, Composer, AnswerMessage…), api/client.js
 sample-docs/ Tài liệu mẫu tự viết (PDF sinh từ src/*.txt bằng tools/MakePdf.java)
 scripts/     ingest-samples.sh, run-eval.sh, run-experiments.sh, check_prompt_injection.py
 docs/        eval/ (báo cáo JSON của từng lần chạy eval) · screenshots/

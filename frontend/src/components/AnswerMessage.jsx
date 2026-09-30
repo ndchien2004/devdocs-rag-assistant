@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import SourceList, { sourceElementId } from './SourceList.jsx'
+import { InfoIcon } from './icons.jsx'
 
 const CITATION = /\[(\d+(?:\s*,\s*\d+)*)\]/g
 // Không biến [n] thành link khi nằm trong code (```...``` hoặc `...`), ví dụ arr[0].
@@ -21,38 +23,36 @@ export function linkCitations(text, validIndexes) {
     .join('')
 }
 
-function scrollToSource(messageId, index) {
-  const el = document.getElementById(sourceElementId(messageId, index))
-  if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  el.classList.remove('flash')
-  void el.offsetWidth // restart animation
-  el.classList.add('flash')
-}
-
 export default function AnswerMessage({ message }) {
   const { id, answer, found, sources, latencyMs } = message
+  const [openSource, setOpenSource] = useState(null)
 
   if (!found) {
     return (
-      <div
-        data-role="assistant"
-        data-found="false"
-        className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-slate-500"
-      >
-        <span>ℹ️</span>
+      <div data-role="assistant" data-found="false" className="flex gap-3 text-ink-soft">
+        <InfoIcon className="mt-1 h-[18px] w-[18px] shrink-0 text-muted" />
         <div>
-          <p>{answer}</p>
-          <p className="mt-1 text-xs">Thử diễn đạt lại câu hỏi, bỏ bộ lọc chủ đề, hoặc nạp thêm tài liệu.</p>
+          <p className="font-serif text-[16.5px] leading-7">{answer}</p>
+          <p className="mt-1 text-sm text-muted">Thử diễn đạt lại câu hỏi, bỏ lọc chủ đề, hoặc nạp thêm tài liệu.</p>
         </div>
       </div>
     )
   }
 
+  function showSource(index) {
+    setOpenSource(index)
+    const el = document.getElementById(sourceElementId(id, index))
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    el.classList.remove('flash')
+    void el.offsetWidth // chạy lại animation
+    el.classList.add('flash')
+  }
+
   const validIndexes = new Set(sources.map((s) => s.index))
   return (
-    <div data-role="assistant" data-found="true" className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="markdown">
+    <div data-role="assistant" data-found="true">
+      <div className="markdown font-serif text-[16.5px] leading-[1.7] text-ink">
         <ReactMarkdown
           rehypePlugins={[rehypeHighlight]}
           components={{
@@ -61,16 +61,17 @@ export default function AnswerMessage({ message }) {
                 const index = Number(href.slice('#cite-'.length))
                 return (
                   <button
-                    onClick={() => scrollToSource(id, index)}
-                    className="mx-0.5 rounded bg-sky-50 px-1 align-super text-xs font-semibold text-sky-700 hover:bg-sky-100"
+                    type="button"
+                    onClick={() => showSource(index)}
                     title="Xem nguồn"
+                    className="mx-[1px] inline-grid h-[18px] min-w-[18px] place-items-center rounded-md bg-accent-soft px-1 align-[2px] font-sans text-[11px] font-semibold text-accent-strong transition hover:bg-accent hover:text-white"
                   >
-                    {children}
+                    {String(children).replace(/[[\]]/g, '')}
                   </button>
                 )
               }
               return (
-                <a href={href} target="_blank" rel="noreferrer" className="text-sky-700 underline">
+                <a href={href} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">
                   {children}
                 </a>
               )
@@ -80,8 +81,8 @@ export default function AnswerMessage({ message }) {
           {linkCitations(answer, validIndexes)}
         </ReactMarkdown>
       </div>
-      <SourceList messageId={id} sources={sources} />
-      {latencyMs != null && <div className="mt-2 text-right text-xs text-slate-400">{(latencyMs / 1000).toFixed(1)} giây</div>}
+      <SourceList messageId={id} sources={sources} openIndex={openSource} onToggle={setOpenSource} />
+      {latencyMs != null && <p className="mt-2.5 text-xs text-muted">{(latencyMs / 1000).toFixed(1)} giây</p>}
     </div>
   )
 }

@@ -15,20 +15,23 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, dang
     <dialog
       ref={ref}
       onCancel={onCancel}
-      className="m-auto w-full max-w-md rounded-xl p-0 shadow-xl backdrop:bg-slate-900/40"
+      className="m-auto w-full max-w-sm rounded-2xl border border-line bg-canvas p-0 text-ink shadow-2xl backdrop:bg-ink/30 backdrop:backdrop-blur-[2px]"
     >
-      <div className="p-5">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="mt-2 text-sm text-slate-600">{message}</p>
+      <div className="px-5 pt-5 pb-4">
+        <h2 className="font-serif text-lg font-semibold">{title}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{message}</p>
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
-        <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200">
+      <div className="flex justify-end gap-2 px-5 pb-5">
+        <button
+          onClick={onCancel}
+          className="rounded-lg border border-line-strong bg-white px-3.5 py-1.5 text-sm text-ink-soft transition hover:text-ink"
+        >
           Hủy
         </button>
         <button
           onClick={onConfirm}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${
-            danger ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'
+          className={`rounded-lg px-3.5 py-1.5 text-sm font-medium text-white transition ${
+            danger ? 'bg-danger hover:bg-danger/90' : 'bg-accent hover:bg-accent-strong'
           }`}
         >
           {confirmLabel}

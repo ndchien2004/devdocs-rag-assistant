@@ -84,15 +84,22 @@ fs.mkdirSync(OUT_DIR, { recursive: true })
 const browser = await puppeteer.launch({
   executablePath,
   headless: true,
-  defaultViewport: { width: 1100, height: 760 },
+  defaultViewport: { width: 1280, height: 800 },
   args: ['--lang=vi-VN'],
 })
 try {
   const page = await browser.newPage()
   const recorder = new GifRecorder(page)
 
-  console.log('Chat page')
-  // 1. Câu hỏi trong phạm vi: có câu trả lời Markdown, trích dẫn bấm được, danh sách nguồn.
+  console.log('Welcome screen')
+  await page.goto(APP_URL, { waitUntil: 'networkidle0' })
+  await page.waitForSelector('[data-role="document-row"]', { timeout: 10_000 })
+  const rows = await page.$$('[data-role="document-row"]')
+  assert(rows.length >= 5, `sidebar lists the sample documents (${rows.length})`)
+  await page.screenshot({ path: path.join(OUT_DIR, 'welcome.png') })
+
+  console.log('Chat')
+  // 1. Câu hỏi trong phạm vi: câu trả lời Markdown, trích dẫn bấm được, nguồn dạng pill.
   // LLM không tất định và có câu model hay quên ghi [n] (E5: 13% câu trả lời thiếu trích dẫn)
   // → thử lần lượt vài câu hỏi thật; nếu vẫn không có trích dẫn thì chỉ cảnh báo (giới hạn của LLM, không phải lỗi UI).
   let answer
@@ -112,49 +119,52 @@ try {
     console.log(`  (LLM answered "${question}" without [n] citations, trying another question)`)
   }
   assert(answer, 'assistant answer is rendered')
-  const sources = await answer.$$('li[id^="src-"]')
-  assert(sources.length > 0, `source list is shown (${sources.length} sources)`)
+  const sources = await answer.$$('[id^="src-"]')
+  assert(sources.length > 0, `sources are shown as pills (${sources.length})`)
   if (citations.length > 0) {
-    assert(true, `answer has clickable citations (${citations.length})`)
     await citations[0].click()
+    assert(true, `answer has clickable citations (${citations.length})`)
   } else {
     console.warn('  ⚠ no answer contained [n] citations — citation links not exercised')
+    await sources[0].click()
   }
-  await new Promise((r) => setTimeout(r, 400))
-  const toggle = await answer.$('li[id^="src-"] button')
-  await toggle.click()
+  await new Promise((r) => setTimeout(r, 500))
+  assert(await answer.$('[data-role="source-snippet"]'), 'the cited source opens its snippet')
   await recorder.hold(2100)
-  const snippet = await answer.$('li[id^="src-"] p')
-  assert(snippet, 'clicking "xem đoạn trích" shows the snippet')
-  await page.screenshot({ path: path.join(OUT_DIR, 'chat.png'), fullPage: false })
+  await page.screenshot({ path: path.join(OUT_DIR, 'chat.png') })
 
-  // 2. Câu hỏi ngoài phạm vi: found = false hiển thị kiểu khác (xám, ℹ️).
+  // 2. Câu hỏi ngoài phạm vi: found = false hiển thị kiểu khác (chữ xám, icon ℹ).
   await typeSlowly(page, 'textarea', OUT_OF_SCOPE, recorder)
   await page.keyboard.press('Enter')
   await waitForNewAnswer(page, 1)
   await recorder.hold(2800)
-  const notFound = await page.$('[data-role="assistant"][data-found="false"]')
-  assert(notFound, 'out-of-scope question shows the "not found" style')
+  assert(await page.$('[data-role="assistant"][data-found="false"]'), 'out-of-scope question shows the "not found" style')
   await page.screenshot({ path: path.join(OUT_DIR, 'chat-not-found.png') })
 
-  // 3. Trang Tài liệu: bảng danh sách + hộp thoại xác nhận xóa.
-  console.log('Documents page')
-  const [docsTab] = await page.$$('xpath/.//nav/button[contains(., "Tài liệu")]')
-  await docsTab.click()
-  await page.waitForSelector('tbody tr td .rounded-full', { timeout: 10_000 })
-  const rows = await page.$$('tbody tr')
-  assert(rows.length >= 5, `documents table lists the sample documents (${rows.length} rows)`)
+  // 3. Thanh tài liệu: mở rộng ra nửa màn hình → bảng đầy đủ → hộp thoại xác nhận xóa → thu gọn.
+  console.log('Document sidebar')
+  await page.click('button[aria-label="Mở rộng danh sách"]')
+  await page.waitForSelector('table [data-role="document-row"]')
+  await new Promise((r) => setTimeout(r, 400)) // chờ animation độ rộng
+  const sidebarWidth = await page.$eval('aside', (el) => el.getBoundingClientRect().width)
+  assert(sidebarWidth >= 1280 * 0.45, `expanded sidebar takes about half the screen (${Math.round(sidebarWidth)}px)`)
   await recorder.hold(2100)
   await page.screenshot({ path: path.join(OUT_DIR, 'documents.png') })
 
-  const [deleteButton] = await page.$$('xpath/.//tbody//button[contains(., "Xóa")]')
-  await deleteButton.click()
+  await page.click('table button[aria-label^="Xóa"]')
   await page.waitForSelector('dialog[open]')
   assert(true, 'delete asks for confirmation')
   await recorder.hold(1400)
   await page.screenshot({ path: path.join(OUT_DIR, 'documents-confirm.png') })
   const [cancel] = await page.$$('xpath/.//dialog//button[contains(., "Hủy")]')
   await cancel.click()
+
+  await page.click('button[aria-label="Thu gọn thanh bên"]')
+  await new Promise((r) => setTimeout(r, 400))
+  const collapsedWidth = await page.$eval('aside', (el) => el.getBoundingClientRect().width)
+  assert(collapsedWidth < 80, `sidebar collapses to an icon rail (${Math.round(collapsedWidth)}px)`)
+  await recorder.hold(1400)
+  await page.click('button[aria-label="Mở thanh tài liệu"]')
   await recorder.frame(800)
 
   recorder.save(path.join(OUT_DIR, 'demo.gif'))
