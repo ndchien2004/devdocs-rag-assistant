@@ -9,8 +9,8 @@ xây dựng bằng **Java 21 · Spring Boot 4.1 · Spring AI 2.0 · PostgreSQL/p
 
 - [x] Phase 0 — Hello Spring AI (chat, embedding, cosine similarity)
 - [x] Phase 1 — Ingestion pipeline (PDF/Markdown → chunk → pgvector)
-- [ ] Phase 2 — RAG thủ công
-- [ ] Phase 3 — Evaluation
+- [x] Phase 2 — RAG thủ công
+- [x] Phase 3 — Evaluation
 - [ ] Phase 4 — Tối ưu & so sánh với Advisor
 - [ ] Phase 5 — Frontend React
 - [ ] Phase 6 — Hoàn thiện portfolio
@@ -65,3 +65,42 @@ Kết quả nạp 5 tài liệu mẫu: 54 chunk, ~15 giây (RTX 3050 Laptop 4 GB
 ```sql
 SELECT metadata->>'file_name', metadata->>'page_number', left(content, 80) FROM vector_store LIMIT 10;
 ```
+
+## Phase 3 — Evaluation
+
+Bộ eval [`eval-dataset.json`](backend/src/main/resources/eval/eval-dataset.json) gồm 30 câu hỏi viết tay trên tài liệu mẫu,
+mỗi câu gắn trang/mục chứa đáp án:
+
+| Nhóm | Số câu | Kiểm tra |
+|---|---:|---|
+| `DIRECT` — hỏi thẳng khái niệm | 12 | retrieval cơ bản |
+| `PARAPHRASE` — diễn đạt khác tài liệu | 8 | sức mạnh embedding ngữ nghĩa |
+| `CROSS_LINGUAL` — hỏi tiếng Việt, tài liệu tiếng Anh | 5 | khả năng đa ngôn ngữ |
+| `OUT_OF_SCOPE` — ngoài phạm vi | 5 | từ chối đúng (BR-QRY-03) |
+
+```bash
+./scripts/run-eval.sh                                            # cấu hình mặc định
+./scripts/run-eval.sh '{"topK":3,"similarityThreshold":0.6}'     # thử cấu hình khác
+```
+
+Eval chỉ đo **retrieval** (không gọi LLM). Chunk "đúng" = `file_name` khớp và `page_number` nằm trong `expected`.
+
+### Baseline (chunk 500 token, K = 5, θ = 0.5, tìm trên mọi tài liệu)
+
+| Cấu hình | Hit@1 | Hit@3 | Hit@5 | MRR | Out-of-scope Acc | Avg latency |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (chunk 500, K=5, θ=0.5) | 84.0% | 96.0% | 100% | 0.903 | 100% | ~20 ms |
+
+Theo nhóm câu hỏi: DIRECT Hit@1 = 100%, PARAPHRASE 75%, CROSS_LINGUAL 60%.
+Báo cáo đầy đủ từng câu: [`docs/eval/phase3-baseline.json`](docs/eval/phase3-baseline.json).
+
+Đọc kết quả một cách trung thực:
+
+- **Hit@5 = 100% không có nghĩa là hệ thống hoàn hảo.** Bộ tài liệu nhỏ (54 chunk), mỗi trang một chủ đề rõ ràng,
+  và câu hỏi do chính người viết tài liệu đặt ra → kết quả lạc quan hơn tài liệu thật (sách dày, nhiều trang na ná nhau).
+- **Hỏi tiếng Việt trên tài liệu tiếng Anh yếu nhất** (Hit@1 60%): "cơ chế tự phát hiện thay đổi của entity" không
+  khớp được với "dirty checking" — chunk đúng chỉ đứng thứ 4. Thuật ngữ kỹ thuật dịch sang tiếng Việt làm mất tín hiệu.
+- **Biên an toàn của ngưỡng rất mỏng**: chunk đúng của các câu khó chỉ đạt score 0.52–0.58, trong khi câu ngoài
+  phạm vi cao nhất 0.39. θ = 0.5 đang nằm vừa khít giữa hai nhóm — Phase 4 đo xem xê dịch θ ảnh hưởng thế nào.
+- Độ trễ retrieval (embedding câu hỏi bằng bge-m3 trên GPU + HNSW search) ~20 ms khi model đã nạp; lần gọi đầu
+  ~470 ms do Ollama nạp model vào VRAM.

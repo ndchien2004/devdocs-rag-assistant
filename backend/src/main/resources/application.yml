@@ -47,6 +47,7 @@ app:
     min-page-chars: 30
     max-file-size: 20MB
     storage-dir: ${STORAGE_DIR:./storage}
+    eval-dataset: classpath:eval/eval-dataset.json
 
 server:
   tomcat:
