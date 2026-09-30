@@ -12,7 +12,7 @@ xây dựng bằng **Java 21 · Spring Boot 4.1 · Spring AI 2.0 · PostgreSQL/p
 - [x] Phase 2 — RAG thủ công
 - [x] Phase 3 — Evaluation
 - [x] Phase 4 — Tối ưu & so sánh với Advisor
-- [ ] Phase 5 — Frontend React
+- [x] Phase 5 — Frontend React
 - [ ] Phase 6 — Hoàn thiện portfolio
 
 ## Chạy nhanh
@@ -27,6 +27,8 @@ docker exec -it devdocs-ollama ollama pull qwen2.5:7b     # hoặc qwen2.5:3b n�
 
 cd backend && ./mvnw spring-boot:run       # đọc biến môi trường DB_PORT, CHAT_MODEL...
 ./scripts/ingest-samples.sh                # nạp tài liệu mẫu (từ thư mục gốc)
+
+cd frontend && npm install && npm run dev  # http://localhost:5173
 ```
 
 Swagger UI: <http://localhost:8080/swagger-ui.html>

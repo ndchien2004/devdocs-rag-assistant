@@ -58,6 +58,8 @@ app:
     max-file-size: 20MB
     storage-dir: ${STORAGE_DIR:./storage}
     eval-dataset: classpath:eval/eval-dataset.json
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
 server:
   tomcat:
