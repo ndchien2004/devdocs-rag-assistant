@@ -1,0 +1,32 @@
+# Build output
+target/
+build/
+dist/
+*.class
+
+# Dependencies
+node_modules/
+
+# Runtime data — uploaded files, never commit
+storage/
+backend/storage/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Documents added locally for testing (may be copyrighted) — only commit files you authored
+sample-docs/private/
