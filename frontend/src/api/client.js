@@ -55,4 +55,14 @@ export const api = {
   deleteDocument: (id) => request(`/api/v1/documents/${id}`, { method: 'DELETE' }),
 
   reindexDocument: (id) => request(`/api/v1/documents/${id}/reindex`, { method: 'POST' }),
+
+  listConversations: () => request('/api/v1/conversations'),
+  getConversation: (id) => request(`/api/v1/conversations/${id}`),
+  createConversation: (documentIds) => request('/api/v1/conversations', json('POST', { documentIds })),
+  renameConversation: (id, title) => request(`/api/v1/conversations/${id}`, json('PATCH', { title })),
+  setConversationScope: (id, documentIds) => request(`/api/v1/conversations/${id}/scope`, json('PUT', { documentIds })),
+  deleteConversation: (id) => request(`/api/v1/conversations/${id}`, { method: 'DELETE' }),
+  askConversation: (id, question, topic) =>
+    request(`/api/v1/conversations/${id}/messages`, json('POST', { question, topic: topic || null })),
+  pdfUrl: (id) => `${API_URL}/api/v1/documents/${id}/content`,
 }

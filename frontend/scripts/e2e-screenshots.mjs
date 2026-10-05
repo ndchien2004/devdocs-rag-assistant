@@ -98,6 +98,17 @@ try {
   assert(rows.length >= 5, `sidebar lists the sample documents (${rows.length})`)
   await page.screenshot({ path: path.join(OUT_DIR, 'welcome.png') })
 
+  console.log('PDF preview')
+  await page.click('button[aria-label="Nạp tài liệu"]')
+  await page.waitForSelector('input[type="file"]')
+  await (await page.$('input[type="file"]')).uploadFile(path.resolve('../sample-docs/02_Spring_Boot.pdf'))
+  await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Xem trước PDF')?.click())
+  await page.waitForSelector('[role="dialog"][aria-label="Xem PDF"]')
+  await page.waitForFunction(() => document.querySelector('[role="dialog"]')?.textContent.includes('trang'))
+  await page.click('button[aria-label="Trang sau"]')
+  assert(await page.$('button[aria-label="Phóng to"]'), 'selected PDF preview has page and zoom controls')
+  await page.click('button[aria-label="Đóng PDF"]')
+
   console.log('Chat')
   // 1. Câu hỏi trong phạm vi: câu trả lời Markdown, trích dẫn bấm được, nguồn dạng pill.
   // LLM không tất định và có câu model hay quên ghi [n] (E5: 13% câu trả lời thiếu trích dẫn)
@@ -107,6 +118,9 @@ try {
   for (const question of QUESTIONS) {
     recorder.frames = []
     await page.goto(APP_URL, { waitUntil: 'networkidle0' })
+    const newSession = await page.$('section button')
+    if (newSession) await newSession.click()
+    await page.waitForFunction(() => document.querySelector('textarea') && !document.querySelector('[role="status"]'))
     await recorder.frame(1200)
     await typeSlowly(page, 'textarea', question, recorder)
     await page.keyboard.press('Enter')
@@ -130,13 +144,43 @@ try {
   }
   await new Promise((r) => setTimeout(r, 500))
   assert(await answer.$('[data-role="source-snippet"]'), 'the cited source opens its snippet')
+  if (citations.length > 0) {
+    await page.waitForSelector('[role="dialog"][aria-label="Xem PDF"]', { timeout: 15_000 })
+    assert(await page.$('button[aria-label="Trang sau"]'), 'citation opens the PDF viewer')
+    await page.click('button[aria-label="Đóng PDF"]')
+  }
+  await page.reload({ waitUntil: 'networkidle0' })
+  await page.waitForFunction(() => document.querySelectorAll('[data-role="assistant"]').length > 0)
+  assert((await page.$$('[data-role="assistant"]')).length > 0, 'conversation messages restore after refresh')
+  const savedTitle = await page.$eval('main h1', (el) => el.textContent.trim())
+  await page.evaluate(() => [...document.querySelectorAll('section button')].find((b) => b.textContent.trim() === '+ Mới')?.click())
+  await page.waitForFunction(() => document.querySelector('main h1')?.textContent.includes('Cuộc trò chuyện mới'))
+  await page.evaluate((title) => [...document.querySelectorAll('section li')].find((li) => li.textContent.includes(title))?.querySelector('button')?.click(), savedTitle)
+  await page.waitForFunction(() => document.querySelectorAll('[data-role="assistant"]').length > 0)
+  assert((await page.$$('section li')).length > 1, 'saved conversation can be reopened after switching')
+  page.once('dialog', (dialog) => dialog.accept('E2E conversation'))
+  await page.evaluate((title) => {
+    const row = [...document.querySelectorAll('section li')].find((li) => li.textContent.includes(title))
+    row?.querySelector('button[aria-label^="Đổi tên"]')?.click()
+  }, savedTitle)
+  await page.waitForFunction(() => [...document.querySelectorAll('section li')].some((li) => li.textContent.includes('E2E conversation')))
+  assert(true, 'conversation can be renamed')
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('section li')].find((li) => li.textContent.includes('E2E conversation'))
+    row?.querySelector('button[aria-label^="Xóa"]')?.click()
+  })
+  await page.waitForFunction(() => ![...document.querySelectorAll('section li')].some((li) => li.textContent.includes('E2E conversation')))
+  assert(true, 'conversation can be deleted')
   await recorder.hold(2100)
   await page.screenshot({ path: path.join(OUT_DIR, 'chat.png') })
 
   // 2. Câu hỏi ngoài phạm vi: found = false hiển thị kiểu khác (chữ xám, icon ℹ).
+  // Sau khi xóa phiên ở trên, app mở một phiên khác — số câu trả lời đang hiển thị không còn cố định là 1.
+  const answersBefore = (await page.$$('[data-role="assistant"], [data-role="error"]')).length
   await typeSlowly(page, 'textarea', OUT_OF_SCOPE, recorder)
   await page.keyboard.press('Enter')
-  await waitForNewAnswer(page, 1)
+  await waitForNewAnswer(page, answersBefore)
   await recorder.hold(2800)
   assert(await page.$('[data-role="assistant"][data-found="false"]'), 'out-of-scope question shows the "not found" style')
   await page.screenshot({ path: path.join(OUT_DIR, 'chat-not-found.png') })

@@ -23,7 +23,7 @@ export function linkCitations(text, validIndexes) {
     .join('')
 }
 
-export default function AnswerMessage({ message }) {
+export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds }) {
   const { id, answer, found, sources, latencyMs } = message
   const [openSource, setOpenSource] = useState(null)
 
@@ -41,6 +41,8 @@ export default function AnswerMessage({ message }) {
 
   function showSource(index) {
     setOpenSource(index)
+    const source = sources.find((s) => s.index === index)
+    if (source?.documentId) onOpenPdf?.(source)
     const el = document.getElementById(sourceElementId(id, index))
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -81,7 +83,7 @@ export default function AnswerMessage({ message }) {
           {linkCitations(answer, validIndexes)}
         </ReactMarkdown>
       </div>
-      <SourceList messageId={id} sources={sources} openIndex={openSource} onToggle={setOpenSource} />
+      <SourceList messageId={id} sources={sources} openIndex={openSource} onToggle={setOpenSource} onOpenPdf={onOpenPdf} availableDocumentIds={availableDocumentIds} />
       {latencyMs != null && <p className="mt-2.5 text-xs text-muted">{(latencyMs / 1000).toFixed(1)} giây</p>}
     </div>
   )

@@ -6,7 +6,7 @@ function location(source, short = false) {
 }
 
 /** Nguồn dạng "pill"; bấm để xem đoạn trích (mỗi lúc một nguồn). */
-export default function SourceList({ messageId, sources, openIndex, onToggle }) {
+export default function SourceList({ messageId, sources, openIndex, onToggle, onOpenPdf, availableDocumentIds = [] }) {
   if (!sources?.length) return null
   const open = sources.find((s) => s.index === openIndex)
 
@@ -45,6 +45,9 @@ export default function SourceList({ messageId, sources, openIndex, onToggle }) 
             {open.score != null && <span>độ liên quan {open.score.toFixed(2)}</span>}
           </div>
           <p className="leading-relaxed text-ink-soft">{open.snippet}</p>
+          {open.documentId && open.fileName?.toLowerCase().endsWith('.pdf') && (availableDocumentIds.includes(open.documentId)
+            ? <button type="button" onClick={() => onOpenPdf?.(open)} className="mt-2 text-xs font-medium text-accent hover:underline">Mở PDF tại {location(open)}</button>
+            : <p className="mt-2 text-xs text-muted">PDF này đã bị xóa khỏi thư viện; trích dẫn được giữ trong lịch sử.</p>)}
         </div>
       )}
     </div>
