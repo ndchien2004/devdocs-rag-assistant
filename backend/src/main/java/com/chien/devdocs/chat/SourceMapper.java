@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 /**
  * Map chunk → {@link SourceDto} (bước [6] luồng query, BR-QRY-02).
- * Chỉ trả về nguồn thực sự được trích dẫn trong câu trả lời; không parse được trích dẫn hợp lệ nào thì trả toàn bộ.
+ * Chỉ trả về nguồn thực sự được trích dẫn trong câu trả lời.
  */
 @Component
 public class SourceMapper {
@@ -23,17 +23,33 @@ public class SourceMapper {
 
     /** [1], [2][3], [1, 3], [1,2,4] */
     private static final Pattern CITATION_GROUP = Pattern.compile("\\[(\\d+(?:\\s*,\\s*\\d+)*)]");
+    private static final Pattern CODE = Pattern.compile("```[\\s\\S]*?```|`[^`\\n]*`");
+    /** Nhóm 1 = đoạn code (giữ nguyên); phần còn lại = trích dẫn kèm khoảng trắng đứng trước. */
+    private static final Pattern CODE_OR_CITATION = Pattern.compile(
+            "(" + CODE.pattern() + ")|[ \\t]*" + CITATION_GROUP.pattern());
 
     public List<SourceDto> toSources(List<Document> chunks, String answer) {
         TreeSet<Integer> cited = parseCitations(answer, chunks.size());
         List<SourceDto> sources = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
             int index = i + 1;
-            if (cited.isEmpty() || cited.contains(index)) {
+            if (cited.contains(index)) {
                 sources.add(toDto(index, chunks.get(i)));
             }
         }
         return sources;
+    }
+
+    /**
+     * Gỡ mọi nhóm {@code [n]} nằm ngoài code. Dùng cho lịch sử hội thoại: số trích dẫn của lượt trước
+     * trỏ tới CONTEXT cũ, để nguyên thì model có thể chép lại và trỏ nhầm sang chunk của lượt này.
+     */
+    static String stripCitations(String text) {
+        if (text == null) {
+            return "";
+        }
+        return CODE_OR_CITATION.matcher(text)
+                .replaceAll(m -> m.group(1) != null ? Matcher.quoteReplacement(m.group(1)) : "");
     }
 
     /** Số trích dẫn nằm trong [1, max]; số ngoài khoảng (LLM bịa số) bị bỏ qua. */
@@ -42,7 +58,7 @@ public class SourceMapper {
         if (answer == null) {
             return result;
         }
-        Matcher m = CITATION_GROUP.matcher(answer);
+        Matcher m = CITATION_GROUP.matcher(CODE.matcher(answer).replaceAll(""));
         while (m.find()) {
             for (String n : m.group(1).split(",")) {
                 try {

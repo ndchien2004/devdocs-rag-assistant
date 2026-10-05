@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.UUID;
 
 /**
@@ -40,6 +41,8 @@ public class FileStorage {
     public Path resolve(String storagePath) {
         return Path.of(storagePath);
     }
+
+    public boolean exists(String storagePath) { return Files.isRegularFile(resolve(storagePath)); }
 
     public void delete(String storagePath) {
         try {

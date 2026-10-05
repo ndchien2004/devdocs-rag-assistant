@@ -60,8 +60,11 @@ public class AdvisorRagService {
         this.sourceMapper = sourceMapper;
         this.props = props;
         this.systemPrompt = systemPrompt;
-        // ContextualQueryAugmenter dùng biến {query} thay vì {question}.
-        this.userTemplate = read(userPrompt).replace("{question}", "{query}");
+        // ContextualQueryAugmenter dùng biến {query} thay vì {question}, và chỉ điền {query} + {context}:
+        // advisor hỏi đáp một lượt nên {history} được thay sẵn bằng giá trị "không có lịch sử".
+        this.userTemplate = read(userPrompt)
+                .replace("{question}", "{query}")
+                .replace("{history}", RagService.NO_HISTORY);
     }
 
     public RagAnswer answer(ChatRequest request, RagMode mode) {
@@ -95,7 +98,10 @@ public class AdvisorRagService {
             List<Document> numbered = mode == RagMode.RAG_ADVISOR
                     ? promptBuilder.buildContext(retrieved, props.maxContextTokens()).chunks()
                     : retrieved;
-            sources = sourceMapper.toSources(numbered, answer);
+            sources = mode == RagMode.QA_ADVISOR
+                    ? java.util.stream.IntStream.range(0, retrieved.size())
+                            .mapToObj(i -> sourceMapper.toDto(i + 1, retrieved.get(i))).toList()
+                    : sourceMapper.toSources(numbered, answer);
         }
         long total = System.currentTimeMillis() - start;
         log.info("{}: {} chunks → found={} in {} ms", mode, retrieved.size(), found, total);

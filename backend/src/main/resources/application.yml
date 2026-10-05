@@ -48,6 +48,7 @@ app:
     top-k: 5
     similarity-threshold: 0.5
     max-context-tokens: 3000
+    max-history-tokens: 1000      # lịch sử hội thoại trong prompt; vượt thì bỏ tin nhắn cũ nhất trước
     # Chọn theo Phase 4 (E1 + E4): chunk 150 token, overlap 60 (OverlapTextSplitter).
     # Baseline của đặc tả là chunk-size 500, chunk-overlap 0 (TokenTextSplitter).
     chunk-size: 150

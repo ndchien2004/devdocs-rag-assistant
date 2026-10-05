@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.client.RestTestClient;
@@ -28,6 +29,8 @@ import tools.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -81,6 +84,7 @@ class RagFlowIntegrationTest {
             """;
 
     private static String documentId;
+    private static String conversationId;
 
     @Autowired
     RestTestClient client;
@@ -207,6 +211,89 @@ class RagFlowIntegrationTest {
 
     @Test
     @Order(8)
+    void conversationPersistsMessagesAndScopeAndSupportsFollowUps() {
+        String isolatedText = "# POLYCARBONATE VECTOR ISOLATION\n\nPOLYCARBONATE VECTOR ISOLATION uses the ZEBRACOLOR material identifier exclusively.";
+        JsonNode otherDoc = upload("isolation.md", isolatedText, "REACT")
+                .expectStatus().isCreated().returnResult(JsonNode.class).getResponseBody();
+        assertThat(otherDoc.get("id").asString()).isNotEqualTo(documentId);
+        String isolatedQuestion = "POLYCARBONATE VECTOR ISOLATION ZEBRACOLOR";
+        chatModel.reset("The selected material is documented [1].");
+        assertThat(chat(Map.of("question", isolatedQuestion)).get("found").asBoolean()).isTrue();
+        chatModel.reset("The selected material is documented [1].");
+        JsonNode scoped = client.post().uri("/api/v1/conversations")
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("documentIds", List.of(documentId))).exchange()
+                .expectStatus().isCreated().returnResult(JsonNode.class).getResponseBody();
+        client.post().uri("/api/v1/conversations/{id}/messages", scoped.get("id").asString())
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("question", isolatedQuestion)).exchange()
+                .expectStatus().isOk().expectBody().jsonPath("$.messages[1].found").isEqualTo(false);
+        assertThat(chatModel.calls()).isZero();
+        client.delete().uri("/api/v1/conversations/{id}", scoped.get("id").asString()).exchange().expectStatus().isNoContent();
+
+        JsonNode created = client.post().uri("/api/v1/conversations")
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("documentIds", List.of(documentId))).exchange()
+                .expectStatus().isCreated().returnResult(JsonNode.class).getResponseBody();
+        conversationId = created.get("id").asString();
+
+        JsonNode first = client.post().uri("/api/v1/conversations/{id}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("question", "Propagation REQUIRES_NEW và REQUIRED khác nhau thế nào?", "topic", "SPRING"))
+                .exchange().expectStatus().isOk().returnResult(JsonNode.class).getResponseBody();
+        assertThat(first.get("documentIds").get(0).asString()).isEqualTo(documentId);
+        assertThat(first.get("messages")).hasSize(2);
+        assertThat(first.get("messages").get(1).get("sources").get(0).get("documentId").asString()).isEqualTo(documentId);
+
+        client.post().uri("/api/v1/conversations/{id}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("question", "Còn REQUIRED thì sao?"))
+                .exchange().expectStatus().isOk();
+        assertThat(chatModel.calls()).isEqualTo(2);
+        assertThat(chatModel.lastPrompt().getContents()).contains("Người dùng: Propagation REQUIRES_NEW");
+
+        client.patch().uri("/api/v1/conversations/{id}", conversationId)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("title", "Ôn transaction"))
+                .exchange().expectStatus().isOk().expectBody().jsonPath("$.title").isEqualTo("Ôn transaction");
+        client.get().uri("/api/v1/conversations/{id}", conversationId).exchange()
+                .expectStatus().isOk().expectBody().jsonPath("$.messages.length()").isEqualTo(4);
+
+        client.put().uri("/api/v1/conversations/{id}/scope", conversationId)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("documentIds", List.of())).exchange()
+                .expectStatus().isOk().expectBody().jsonPath("$.documentIds.length()").isEqualTo(0);
+        int calls = chatModel.calls();
+        client.post().uri("/api/v1/conversations/{id}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("question", "Hỏi trong scope rỗng"))
+                .exchange().expectStatus().isOk().expectBody().jsonPath("$.messages[5].found").isEqualTo(false);
+        assertThat(chatModel.calls()).isEqualTo(calls);
+    }
+
+    @Test
+    @Order(9)
+    void concurrentQuestionsInOneConversationAreAllPersistedInOrder() {
+        String id = client.post().uri("/api/v1/conversations")
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("documentIds", List.of(documentId))).exchange()
+                .expectStatus().isCreated().returnResult(JsonNode.class).getResponseBody().get("id").asString();
+
+        // sequence_no tính từ số tin nhắn hiện có: không khóa dòng thì các lượt hỏi đồng thời đụng unique index → 500.
+        int parallel = 4;
+        List<CompletableFuture<HttpStatusCode>> asks = IntStream.range(0, parallel)
+                .mapToObj(i -> CompletableFuture.supplyAsync(() -> client.post()
+                        .uri("/api/v1/conversations/{id}/messages", id).contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("question", "Propagation REQUIRES_NEW và REQUIRED khác nhau thế nào? (" + i + ")"))
+                        .exchange().returnResult(JsonNode.class).getStatus()))
+                .toList();
+
+        assertThat(asks).extracting(CompletableFuture::join).containsOnly(HttpStatus.OK);
+        List<Integer> sequence = jdbc.queryForList(
+                "select sequence_no from conversation_messages where conversation_id = ?::uuid order by sequence_no",
+                Integer.class, id);
+        assertThat(sequence).containsExactlyElementsOf(IntStream.range(0, parallel * 2).boxed().toList());
+        List<String> roles = jdbc.queryForList(
+                "select role from conversation_messages where conversation_id = ?::uuid order by sequence_no",
+                String.class, id);
+        assertThat(roles).containsExactly("USER", "ASSISTANT", "USER", "ASSISTANT", "USER", "ASSISTANT", "USER", "ASSISTANT");
+
+        client.delete().uri("/api/v1/conversations/{id}", id).exchange().expectStatus().isNoContent();
+    }
+
+    @Test
+    @Order(10)
     void reindexDoesNotDuplicateChunks() {                                    // TC-ING-07
         int before = chunkCount(documentId);
 
@@ -216,11 +303,15 @@ class RagFlowIntegrationTest {
     }
 
     @Test
-    @Order(9)
+    @Order(11)
     void deleteRemovesAllChunks() {                                           // TC-ING-06
         client.delete().uri("/api/v1/documents/{id}", documentId).exchange().expectStatus().isNoContent();
 
         assertThat(chunkCount(documentId)).isZero();
         client.get().uri("/api/v1/documents/{id}", documentId).exchange().expectStatus().isNotFound();
+        client.get().uri("/api/v1/conversations/{id}", conversationId).exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.documentIds.length()").isEqualTo(0)
+                .jsonPath("$.messages.length()").isEqualTo(6)
+                .jsonPath("$.messages[1].sources[0].fileName").isEqualTo("02_Spring.md");
     }
 }

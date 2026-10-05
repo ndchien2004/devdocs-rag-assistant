@@ -37,23 +37,34 @@ class SourceMapperTest {
     }
 
     @Test
-    void returnsAllSourcesWhenNoCitationCanBeParsed() {
+    void returnsNoSourcesWhenNoCitationCanBeParsed() {
         assertThat(mapper.toSources(chunks(3), "Câu trả lời không có trích dẫn."))
-                .extracting(SourceDto::index).containsExactly(1, 2, 3);
+                .isEmpty();
     }
 
     @Test
     void ignoresCitationNumbersOutsideTheContext() {
         assertThat(mapper.toSources(chunks(2), "Bịa số [7] và dùng thật [2]."))
                 .extracting(SourceDto::index).containsExactly(2);
-        // chỉ có số bịa → coi như không parse được → trả toàn bộ
+        // Chỉ số ngoài context không được biến thành nguồn.
         assertThat(mapper.toSources(chunks(2), "Chỉ có [9]."))
-                .extracting(SourceDto::index).containsExactly(1, 2);
+                .isEmpty();
     }
 
     @Test
     void doesNotTreatArrayIndexingInCodeAsCitationWhenOutOfRange() {
         assertThat(SourceMapper.parseCitations("int x = arr[0]; y = arr[100];", 5)).isEmpty();
+    }
+
+    @Test
+    void stripCitationsRemovesCitationGroupsButKeepsCode() {
+        assertThat(SourceMapper.stripCitations("REQUIRED là mặc định [1][2, 3]. Ý khác [4]."))
+                .isEqualTo("REQUIRED là mặc định. Ý khác.");
+        assertThat(SourceMapper.stripCitations("Dùng `arr[0]` để lấy phần tử đầu [2].\n```java\nint x = a[1];\n```"))
+                .isEqualTo("Dùng `arr[0]` để lấy phần tử đầu.\n```java\nint x = a[1];\n```");
+        // Ký tự đặc biệt của regex replacement ($, \) trong code phải được giữ nguyên.
+        assertThat(SourceMapper.stripCitations("Biến `$1\\n` trong shell [1]")).isEqualTo("Biến `$1\\n` trong shell");
+        assertThat(SourceMapper.stripCitations(null)).isEmpty();
     }
 
     @Test
