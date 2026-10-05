@@ -126,6 +126,26 @@ curl -X POST http://localhost:8080/api/v1/chat -H "Content-Type: application/jso
 }
 ```
 
+## Hội thoại đã lưu và xem PDF
+
+Mỗi cuộc trò chuyện lưu riêng danh sách tài liệu được phép tìm kiếm. Cuộc trò chuyện mới chọn các tài liệu đã index tại thời điểm tạo; có thể thay đổi phạm vi ở đầu khung chat. Tài liệu mới tải lên cần được chọn thêm. Lịch sử sáu lượt gần nhất (giới hạn bởi `app.rag.max-history-tokens`) giúp hiểu câu hỏi tiếp nối, còn câu trả lời vẫn phải dẫn nguồn từ nội dung truy xuất. Việc tìm kiếm dùng câu hỏi hiện tại trước; chỉ khi không tìm được đoạn nào mới ghép thêm câu hỏi liền trước, nên đổi chủ đề giữa chừng không bị kéo về chủ đề cũ. Nếu không có đoạn phù hợp hoặc mô hình không trích được nguồn hợp lệ, hệ thống trả lời: “Mình không tìm thấy nội dung liên quan trong tài liệu đã nạp.”
+
+```bash
+curl -X POST http://localhost:8080/api/v1/conversations \
+     -H "Content-Type: application/json" -d '{"documentIds":["<document-uuid>"]}'
+curl http://localhost:8080/api/v1/conversations
+curl http://localhost:8080/api/v1/conversations/{id}                 # mở lại cả phạm vi và tin nhắn
+curl -X PATCH http://localhost:8080/api/v1/conversations/{id} \
+     -H "Content-Type: application/json" -d '{"title":"Ôn Spring"}'
+curl -X PUT http://localhost:8080/api/v1/conversations/{id}/scope \
+     -H "Content-Type: application/json" -d '{"documentIds":["<document-uuid>"]}'
+curl -X POST http://localhost:8080/api/v1/conversations/{id}/messages \
+     -H "Content-Type: application/json" -d '{"question":"Điểm khác nhau là gì?"}'
+curl -X DELETE http://localhost:8080/api/v1/conversations/{id}
+```
+
+PDF được xem trước trong trình duyệt trước khi tải lên, hoặc mở lại từ danh sách tài liệu. Trình xem có điều hướng trang và thu phóng; bấm trích dẫn PDF để mở đúng trang. File PDF được phục vụ inline qua `GET /api/v1/documents/{id}/content`. File mã hóa cần bỏ mật khẩu trước khi nạp. PDF hỏng hoặc không có văn bản được đánh dấu `FAILED`; PDF scan cần OCR ở phiên bản tương lai và không được index rỗng. Xóa tài liệu sẽ gỡ file, record, vector chunks và phạm vi đang hoạt động; tin nhắn cùng ảnh chụp trích dẫn cũ vẫn được giữ.
+
 ```bash
 # Đánh giá retrieval (không gọi LLM) và các thí nghiệm Phase 4
 curl -X POST http://localhost:8080/api/v1/evaluation/run -H "Content-Type: application/json" \
