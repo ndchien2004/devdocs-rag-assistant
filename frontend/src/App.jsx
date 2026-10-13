@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api/client.js'
 import DocumentSidebar from './components/DocumentSidebar.jsx'
-import LiquidBackground from './components/LiquidBackground.jsx'
 import { LoadingOverlay } from './components/Overlay.jsx'
 import ChatPage from './pages/ChatPage.jsx'
 const PdfViewer = lazy(() => import('./components/PdfViewer.jsx'))
@@ -125,7 +124,6 @@ export default function App() {
 
   return (
     <div className="relative isolate flex h-screen gap-3 overflow-hidden p-3 font-sans text-ink">
-      <LiquidBackground />
       <DocumentSidebar
         mode={sidebarMode} onModeChange={changeSidebarMode} documents={documents} loading={docsLoading}
         error={docsError} onChanged={refreshDocuments} conversations={conversations}
