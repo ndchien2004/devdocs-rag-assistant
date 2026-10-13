@@ -157,15 +157,37 @@ class RagServiceTest {
     }
 
     @Test
-    void answerWithoutAValidCitationIsRefused() {
-        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of(hit("facts", 1, 0.8)));
-        llmAnswers("Câu trả lời tự tin nhưng không trích dẫn.");
+    void answerWithoutAValidCitationIsKeptWithAllContextChunksAsSources() {
+        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of(
+                hit("facts", 1, 0.8), hit("more facts", 2, 0.7)));
+        llmAnswers("Câu trả lời tự tin nhưng quên trích dẫn.");
 
         ChatResponse response = service.ask(new ChatRequest("Hỏi", null, null));
 
-        assertThat(response.found()).isFalse();
-        assertThat(response.answer()).isEqualTo(ChatResponse.NOT_FOUND_ANSWER);
-        assertThat(response.sources()).isEmpty();
+        // Không vứt câu trả lời: trả kèm mọi đoạn đã đưa cho model để người dùng tự đối chiếu.
+        assertThat(response.found()).isTrue();
+        assertThat(response.answer()).isEqualTo("Câu trả lời tự tin nhưng quên trích dẫn.");
+        assertThat(response.sources()).extracting(s -> s.index()).containsExactly(1, 2);
+        // query_logs vẫn ghi "không có căn cứ" để đo được tỉ lệ.
+        ArgumentCaptor<QueryLog> log = ArgumentCaptor.forClass(QueryLog.class);
+        verify(queryLogRepository).save(log.capture());
+        assertThat(log.getValue().isFound()).isFalse();
+    }
+
+    @Test
+    void streamedAnswerWithoutCitationIsKeptInsteadOfReplacedByNotFound() {
+        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of(hit("JPQL", 1, 0.57)));
+        llmStreams(Flux.just("JPQL truy vấn trên entity,", " không phải trên bảng."));
+
+        StepVerifier.create(service.stream(new ChatRequest("JPQL là gì?", null, null)))
+                .expectNextCount(3)
+                .assertNext(e -> {
+                    ChatResponse done = ((RagStreamEvent.Done) e).response();
+                    assertThat(done.found()).isTrue();
+                    assertThat(done.answer()).isEqualTo("JPQL truy vấn trên entity, không phải trên bảng.");
+                    assertThat(done.sources()).hasSize(1);
+                })
+                .verifyComplete();
     }
 
     @Test
