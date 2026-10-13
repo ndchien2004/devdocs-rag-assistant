@@ -34,13 +34,15 @@ export function citedIndexes(text) {
 }
 
 export default function AnswerMessage({ message }) {
-  const { id, answer, found, latencyMs, streaming, stopped, candidates = [] } = message
+  const { id, answer, found, latencyMs, streaming, stopped, interrupted, candidates = [] } = message
   const [openSource, setOpenSource] = useState(null)
 
-  if (streaming && !answer) return null // chưa có chữ nào: ChatPage đang hiện chấm "đang tìm"
+  // Chưa có chữ nào: ChatPage đang hiện chấm "đang tìm" (hoặc thông báo lỗi nếu bị ngắt).
+  if ((streaming || interrupted) && !answer) return null
 
-  // Đang stream / đã dừng: chưa có kết quả cuối từ backend → nguồn = ứng viên đã được trích dẫn tới lúc này.
-  const partial = streaming || stopped
+  // Đang stream / đã dừng / bị lỗi giữa chừng: chưa có kết quả cuối từ backend
+  // → nguồn = ứng viên đã được trích dẫn tới lúc này.
+  const partial = streaming || stopped || interrupted
   const sources = partial ? candidates.filter((s) => citedIndexes(answer).has(s.index)) : message.sources
 
   if (!partial && !found) {
