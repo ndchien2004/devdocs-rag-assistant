@@ -29,20 +29,20 @@ public class RagService {
     private final PromptBuilder promptBuilder;
     private final SourceMapper sourceMapper;
     private final ChatClient chatClient;
-    private final QueryLogRepository queryLogRepository;
+    private final QueryLogger queryLogger;
     private final RagProperties props;
     private final Resource systemPrompt;
     private final Resource userPrompt;
 
     public RagService(Retriever retriever, PromptBuilder promptBuilder, SourceMapper sourceMapper,
-                      ChatClient chatClient, QueryLogRepository queryLogRepository, RagProperties props,
+                      ChatClient chatClient, QueryLogger queryLogger, RagProperties props,
                       @Value("classpath:prompts/rag-system.st") Resource systemPrompt,
                       @Value("classpath:prompts/rag-user.st") Resource userPrompt) {
         this.retriever = retriever;
         this.promptBuilder = promptBuilder;
         this.sourceMapper = sourceMapper;
         this.chatClient = chatClient;
-        this.queryLogRepository = queryLogRepository;
+        this.queryLogger = queryLogger;
         this.props = props;
         this.systemPrompt = systemPrompt;
         this.userPrompt = userPrompt;
@@ -84,8 +84,7 @@ public class RagService {
 
         long total = System.currentTimeMillis() - start;
         saveLog(question, request, topK, hits.size(), maxScore, found, retrievalMs, llmMs, total);  // [7]
-        return new RagAnswer(found ? answer : ChatResponse.NOT_FOUND_ANSWER, found, sources, total, true,
-                hits.size());
+        return new RagAnswer(answer, found, sources, total, true, hits.size());
     }
 
     private String callLlm(String context, String question) {
@@ -112,12 +111,7 @@ public class RagService {
 
     private void saveLog(String question, ChatRequest request, int topK, int retrievedCount, Double maxScore,
                          boolean found, long retrievalMs, Long llmMs, long totalMs) {
-        try {
-            queryLogRepository.save(new QueryLog(question, request.topic(), topK, retrievedCount, maxScore, found,
-                    retrievalMs, llmMs, totalMs));
-        } catch (RuntimeException e) {
-            // Ghi log thất bại không được làm hỏng câu trả lời.
-            log.warn("Could not save query log: {}", e.getMessage());
-        }
+        queryLogger.save(new QueryLog(question, request.topic(), RagMode.MANUAL, topK, retrievedCount, maxScore,
+                found, retrievalMs, llmMs, totalMs));
     }
 }

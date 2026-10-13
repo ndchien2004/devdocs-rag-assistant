@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Phase 4 — RAG bằng Advisor có sẵn của Spring AI, để so sánh với RAG thủ công ({@link RagService}).
@@ -46,18 +47,20 @@ public class AdvisorRagService {
     private final VectorStore vectorStore;
     private final PromptBuilder promptBuilder;
     private final SourceMapper sourceMapper;
+    private final QueryLogger queryLogger;
     private final RagProperties props;
     private final Resource systemPrompt;
     private final String userTemplate;
 
     public AdvisorRagService(ChatClient chatClient, VectorStore vectorStore, PromptBuilder promptBuilder,
-                             SourceMapper sourceMapper, RagProperties props,
+                             SourceMapper sourceMapper, QueryLogger queryLogger, RagProperties props,
                              @Value("classpath:prompts/rag-system.st") Resource systemPrompt,
                              @Value("classpath:prompts/rag-user.st") Resource userPrompt) {
         this.chatClient = chatClient;
         this.vectorStore = vectorStore;
         this.promptBuilder = promptBuilder;
         this.sourceMapper = sourceMapper;
+        this.queryLogger = queryLogger;
         this.props = props;
         this.systemPrompt = systemPrompt;
         // ContextualQueryAugmenter dùng biến {query} thay vì {question}.
@@ -99,6 +102,9 @@ public class AdvisorRagService {
         }
         long total = System.currentTimeMillis() - start;
         log.info("{}: {} chunks → found={} in {} ms", mode, retrieved.size(), found, total);
+        // Advisor retrieve bên trong lời gọi LLM → không tách được retrieval_ms / llm_ms, chỉ có tổng.
+        queryLogger.save(new QueryLog(question, request.topic(), mode, topK, retrieved.size(), maxScore(retrieved),
+                found, null, null, total));
         return new RagAnswer(answer, found, sources, total, true, retrieved.size());
     }
 
@@ -128,6 +134,10 @@ public class AdvisorRagService {
                         .allowEmptyContext(false)
                         .build())
                 .build();
+    }
+
+    private static Double maxScore(List<Document> docs) {
+        return docs.stream().map(Document::getScore).filter(Objects::nonNull).max(Double::compare).orElse(null);
     }
 
     @SuppressWarnings("unchecked")

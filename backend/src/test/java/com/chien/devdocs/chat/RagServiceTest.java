@@ -47,7 +47,7 @@ class RagServiceTest {
         RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 200, 10, 30,
                 DataSize.ofMegabytes(20), "./storage");
         service = new RagService(retriever, new PromptBuilder(), new SourceMapper(), chatClient,
-                queryLogRepository, props,
+                new QueryLogger(queryLogRepository), props,
                 new ByteArrayResource("system".getBytes()), new ByteArrayResource("{context} {question}".getBytes()));
     }
 
@@ -77,6 +77,7 @@ class RagServiceTest {
         ArgumentCaptor<QueryLog> log = ArgumentCaptor.forClass(QueryLog.class);
         verify(queryLogRepository).save(log.capture());
         assertThat(log.getValue().isFound()).isFalse();
+        assertThat(log.getValue().getMode()).isEqualTo(RagMode.MANUAL);
         assertThat(log.getValue().getRetrievedCount()).isZero();
         assertThat(log.getValue().getLlmMs()).isNull();
     }
@@ -114,6 +115,26 @@ class RagServiceTest {
 
         assertThat(response.found()).isFalse();
         assertThat(response.sources()).isEmpty();
+    }
+
+    @Test
+    void refusalWordedDifferentlyIsNormalizedInResponseButKeptInRagAnswer() {
+        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of(hit("x", 1, 0.6)));
+        String refusal = "Xin lỗi, tài liệu không có thông tin về câu hỏi này.";
+        llmAnswers(refusal);
+
+        RagAnswer answer = service.answer(new ChatRequest("Câu hỏi lạc đề", null, null));
+
+        assertThat(answer.answer()).isEqualTo(refusal);
+        assertThat(answer.toResponse().answer()).isEqualTo(ChatResponse.NOT_FOUND_ANSWER);
+    }
+
+    @Test
+    void failingToSaveQueryLogDoesNotBreakTheAnswer() {
+        when(retriever.retrieve(any(), any(), anyInt(), anyDouble())).thenReturn(List.of());
+        when(queryLogRepository.save(any())).thenThrow(new IllegalStateException("db down"));
+
+        assertThat(service.ask(new ChatRequest("x", null, null)).found()).isFalse();
     }
 
     @Test
