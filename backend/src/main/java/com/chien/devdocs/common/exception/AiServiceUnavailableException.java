@@ -23,7 +23,9 @@ public class AiServiceUnavailableException extends ApiException {
                     || c instanceof java.net.http.HttpTimeoutException
                     || c instanceof java.net.UnknownHostException
                     || c instanceof org.springframework.web.client.ResourceAccessException
-                    || c instanceof org.springframework.ai.retry.TransientAiException) {
+                    || c instanceof org.springframework.ai.retry.TransientAiException
+                    // Streaming đi qua WebClient (reactor-netty): hết read-timeout giữa các token.
+                    || c instanceof io.netty.handler.timeout.TimeoutException) {
                 return true;
             }
             if (c.getCause() == c) {

@@ -40,6 +40,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             return new AiServiceUnavailableException(ex).getBody();
         }
         log.error("Unexpected error", ex);
+        return internalError();
+    }
+
+    /** Lỗi 500 chung, không lộ chi tiết nội bộ. Dùng cả cho sự kiện {@code error} của luồng streaming. */
+    public static ProblemDetail internalError() {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR,
                 "Đã có lỗi xảy ra, vui lòng thử lại sau.");
         pd.setTitle("Internal error");
