@@ -70,6 +70,8 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
   }
 
   const validIndexes = new Set((partial ? candidates : sources).map((s) => s.index))
+  // Model quên ghi [n] (hay gặp với model nhỏ): backend vẫn giữ câu trả lời và trả mọi đoạn đã dùng làm nguồn.
+  const uncited = !partial && sources.length > 0 && ![...citedIndexes(answer)].some((n) => validIndexes.has(n))
   return (
     <div data-role="assistant" data-found="true" data-streaming={streaming ? 'true' : undefined}>
       <div className={`markdown font-serif text-[16.5px] leading-[1.7] text-ink ${streaming ? 'streaming' : ''}`}>
@@ -102,6 +104,11 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
         </ReactMarkdown>
       </div>
       {stopped && !answer && <p className="text-sm text-muted">Đã dừng trước khi có câu trả lời.</p>}
+      {uncited && (
+        <p data-role="uncited-warning" className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
+          ⚠ Câu trả lời này không có trích dẫn nên có thể không dựa trên tài liệu. Hãy đối chiếu với các đoạn nguồn bên dưới.
+        </p>
+      )}
       <SourceList
         messageId={id}
         sources={sources}

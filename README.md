@@ -145,7 +145,7 @@ curl -X POST http://localhost:8080/api/v1/chat -H "Content-Type: application/jso
 
 ## Hội thoại đã lưu và xem PDF
 
-Mỗi cuộc trò chuyện lưu riêng danh sách tài liệu được phép tìm kiếm. Cuộc trò chuyện mới chọn các tài liệu đã index tại thời điểm tạo; có thể thay đổi phạm vi ở đầu khung chat. Tài liệu mới tải lên cần được chọn thêm. Lịch sử sáu lượt gần nhất (giới hạn bởi `app.rag.max-history-tokens`) giúp hiểu câu hỏi tiếp nối, còn câu trả lời vẫn phải dẫn nguồn từ nội dung truy xuất. Việc tìm kiếm dùng câu hỏi hiện tại trước; chỉ khi không tìm được đoạn nào mới ghép thêm câu hỏi liền trước, nên đổi chủ đề giữa chừng không bị kéo về chủ đề cũ. Nếu không có đoạn phù hợp hoặc mô hình không trích được nguồn hợp lệ, hệ thống trả lời: “Mình không tìm thấy nội dung liên quan trong tài liệu đã nạp.”
+Mỗi cuộc trò chuyện lưu riêng danh sách tài liệu được phép tìm kiếm. Cuộc trò chuyện mới chọn các tài liệu đã index tại thời điểm tạo; có thể thay đổi phạm vi ở đầu khung chat. Tài liệu mới tải lên cần được chọn thêm. Lịch sử sáu lượt gần nhất (giới hạn bởi `app.rag.max-history-tokens`) giúp hiểu câu hỏi tiếp nối, còn câu trả lời vẫn phải dẫn nguồn từ nội dung truy xuất. Việc tìm kiếm dùng câu hỏi hiện tại trước; chỉ khi không tìm được đoạn nào mới ghép thêm câu hỏi liền trước, nên đổi chủ đề giữa chừng không bị kéo về chủ đề cũ. Nếu không có đoạn phù hợp hoặc mô hình từ chối, hệ thống trả lời: “Mình không tìm thấy nội dung liên quan trong tài liệu đã nạp.” Nếu mô hình trả lời nhưng quên ghi trích dẫn `[n]` (qwen2.5:3b ~13% số lần), câu trả lời vẫn được giữ, kèm cảnh báo "không có trích dẫn" và mọi đoạn đã đưa cho mô hình để đối chiếu; `query_logs.found = false` để đo được tỉ lệ này.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/conversations \
@@ -458,7 +458,7 @@ cd backend && ./mvnw verify      # unit + integration test + kiểm tra coverage
 | E2E UI | `node frontend/scripts/e2e-screenshots.mjs` (cần backend + frontend + Chrome/Edge) |
 | Chất lượng RAG | `./scripts/run-eval.sh`, `./scripts/run-experiments.sh`, `python scripts/check_prompt_injection.py 20` |
 
-Kết quả hiện tại: **171 test pass**; coverage dòng của service layer 90–100% (tổng 96.1%), JaCoCo chặn build nếu < 70%.
+Kết quả hiện tại: **172 test pass**; coverage dòng của service layer 90–100% (tổng 96.1%), JaCoCo chặn build nếu < 70%.
 GitHub Actions chạy `mvn verify` + build frontend cho mỗi push.
 
 Đối chiếu các test case trong đặc tả (mục 14):

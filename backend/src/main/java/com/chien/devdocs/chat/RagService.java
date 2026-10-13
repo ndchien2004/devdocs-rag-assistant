@@ -111,9 +111,7 @@ public class RagService {
             return Flux.just(new RagStreamEvent.Done(notFound(p).toResponse()));
         }
         List<Document> chunks = p.context().chunks();
-        List<SourceDto> candidates = IntStream.range(0, chunks.size())
-                .mapToObj(i -> sourceMapper.toDto(i + 1, chunks.get(i)))
-                .toList();
+        List<SourceDto> candidates = allSources(chunks);
 
         StringBuilder answer = new StringBuilder();
         AtomicBoolean finished = new AtomicBoolean();
@@ -195,18 +193,40 @@ public class RagService {
         return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
     }
 
-    /** Bước [6] → [7] sau khi đã có câu trả lời đầy đủ của LLM. */
+    /**
+     * Bước [6] → [7] sau khi đã có câu trả lời đầy đủ của LLM.
+     * <ul>
+     *   <li>Câu từ chối → "không tìm thấy" (BR-QRY-03).</li>
+     *   <li>Có trích dẫn hợp lệ → chỉ trả nguồn được trích (BR-QRY-02).</li>
+     *   <li>Không có trích dẫn hợp lệ nào (model nhỏ đôi khi quên [n]) → vẫn giữ câu trả lời, trả <b>mọi</b> đoạn đã
+     *       đưa cho model để người dùng đối chiếu; giao diện gắn cảnh báo "không có trích dẫn".
+     *       {@code query_logs.found = false} để đo được tỉ lệ câu trả lời không có căn cứ.</li>
+     * </ul>
+     */
     RagAnswer finish(Prepared p, String answer, long llmMs) {
-        // Phải có ít nhất một trích dẫn hợp lệ; số ngoài khoảng (LLM bịa, hoặc chỉ số mảng như args[0]) bị bỏ qua.
-        List<SourceDto> cited = sourceMapper.toSources(p.context().chunks(), answer);       // [6]
-        boolean found = !RefusalDetector.isRefusal(answer) && !cited.isEmpty();
-        if (!found) {
-            // API trả "không tìm thấy" thay cho câu này — ghi lại để chẩn đoán được (bật DEBUG khi cần).
-            log.debug("Answer discarded (valid citations: {}): {}", cited.size(), answer);
+        List<Document> chunks = p.context().chunks();
+        boolean refusal = RefusalDetector.isRefusal(answer);
+        // Số ngoài khoảng (LLM bịa, hoặc chỉ số mảng như args[0]) không tính là trích dẫn.
+        List<SourceDto> cited = refusal ? List.of() : sourceMapper.toSources(chunks, answer);  // [6]
+        List<SourceDto> sources = cited;
+        if (refusal) {
+            log.info("Answer treated as refusal → returning 'not found' ({} chars)", answer.length());
+        } else if (cited.isEmpty()) {
+            log.info("Answer has no valid citation → kept, returned with all {} context chunks as sources ({} chars)",
+                    chunks.size(), answer.length());
+            sources = allSources(chunks);
+        }
+        if (refusal || cited.isEmpty()) {
+            log.debug("Ungrounded answer: {}", answer);
         }
         long total = System.currentTimeMillis() - p.startMs();
-        saveLog(p, found, llmMs, total);                                                     // [7]
-        return new RagAnswer(answer, found, found ? cited : List.of(), total, true, p.hits().size());
+        saveLog(p, !refusal && !cited.isEmpty(), llmMs, total);                              // [7]
+        return new RagAnswer(answer, !refusal, sources, total, true, p.hits().size());
+    }
+
+    /** Mọi chunk trong CONTEXT, đánh số [1]..[n] đúng như trong prompt. */
+    private List<SourceDto> allSources(List<Document> chunks) {
+        return IntStream.range(0, chunks.size()).mapToObj(i -> sourceMapper.toDto(i + 1, chunks.get(i))).toList();
     }
 
     private ChatClient.ChatClientRequestSpec prompt(Prepared p) {
