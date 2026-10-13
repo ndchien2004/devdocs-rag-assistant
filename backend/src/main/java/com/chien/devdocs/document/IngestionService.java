@@ -91,12 +91,12 @@ public class IngestionService {
         SourceDocument doc;
         if (existing.isPresent()) {
             doc = existing.get();
-            String path = storage.save(doc.getId(), type, content).toString();
+            String path = storage.save(doc.getId(), type, content);
             doc.resetForRetry(fileName, type.canonicalContentType(), topic, path);
             log.info("Re-uploading previously failed document {} ({})", doc.getId(), fileName);
         } else {
             UUID id = UUID.randomUUID();
-            String path = storage.save(id, type, content).toString();
+            String path = storage.save(id, type, content);
             doc = new SourceDocument(id, fileName, type.canonicalContentType(), content.length, checksum, topic, path);
         }
         try {

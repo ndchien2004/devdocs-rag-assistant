@@ -240,7 +240,8 @@ class IngestionServiceTest {
         var order = inOrder(vectorStore, repository);
         order.verify(vectorStore).delete(any(Filter.Expression.class));
         order.verify(repository).delete(doc);
-        assertThat(Path.of(doc.getStoragePath())).doesNotExist();
+        assertThat(doc.getStoragePath()).doesNotContain("/", "\\");   // tương đối so với storage-dir
+        assertThat(storageDir.resolve(doc.getStoragePath())).doesNotExist();
     }
 
     @Test
