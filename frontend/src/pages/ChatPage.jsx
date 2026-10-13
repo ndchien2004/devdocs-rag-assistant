@@ -39,28 +39,79 @@ export default function ChatPage({ messages, setMessages, indexedCount, docsLoad
   const [options, setOptions] = useState(DEFAULT_CHAT_OPTIONS)
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
+  const abortRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  // Rời trang khi đang stream → hủy request để backend dừng gọi LLM.
+  useEffect(() => () => abortRef.current?.abort(), [])
+
   async function ask(question) {
     if (loading) return
     setMessages((prev) => [...prev, { id: nextId++, role: 'user', text: question }])
     setLoading(true)
+    const topK = Number(options.topK) || null
     try {
-      const res = await api.chat({ question, topic, topK: Number(options.topK) || null, mode: options.mode })
-      setMessages((prev) => [...prev, { id: nextId++, role: 'assistant', ...res }])
+      if (options.mode === 'MANUAL') {
+        await askStreaming(question, topK)
+      } else {
+        // Advisor không hỗ trợ streaming → endpoint thường.
+        const res = await api.chat({ question, topic, topK, mode: options.mode })
+        setMessages((prev) => [...prev, { id: nextId++, role: 'assistant', ...res }])
+      }
     } catch (err) {
       setMessages((prev) => [...prev, { id: nextId++, role: 'error', text: err.message }])
     } finally {
+      abortRef.current = null
       setLoading(false)
     }
   }
 
+  /** Tin nhắn trả lời được thêm ở sự kiện đầu tiên rồi cập nhật dần theo từng token. */
+  async function askStreaming(question, topK) {
+    const id = nextId++
+    const upsert = (patch) =>
+      setMessages((prev) =>
+        prev.some((m) => m.id === id)
+          ? prev.map((m) => (m.id === id ? { ...m, ...patch(m) } : m))
+          : [...prev, { id, role: 'assistant', answer: '', candidates: [], sources: [], ...patch({ answer: '' }) }],
+      )
+    const controller = new AbortController()
+    abortRef.current = controller
+    try {
+      const res = await api.chatStream({
+        question,
+        topic,
+        topK,
+        signal: controller.signal,
+        onSources: (candidates) => upsert(() => ({ streaming: true, candidates })),
+        onToken: (text) => upsert((m) => ({ streaming: true, answer: m.answer + text })),
+      })
+      upsert(() => ({ ...res, streaming: false }))
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        upsert(() => ({ streaming: false, stopped: true, found: true }))
+        return
+      }
+      upsert(() => ({ streaming: false }))
+      throw err
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort()
+  }
+
+  // Chấm "đang tìm" chỉ hiện tới khi có chữ đầu tiên của câu trả lời.
+  const last = messages.at(-1)
+  const showThinking = loading && !(last?.role === 'assistant' && last.streaming && last.answer)
+
   const composer = (
     <Composer
       onSend={ask}
+      onStop={stop}
       disabled={loading}
       topic={topic}
       onTopicChange={setTopic}
@@ -150,7 +201,7 @@ export default function ChatPage({ messages, setMessages, indexedCount, docsLoad
             }
             return <AnswerMessage key={m.id} message={m} />
           })}
-          {loading && <Thinking />}
+          {showThinking && <Thinking />}
           <div ref={bottomRef} />
         </div>
       </div>

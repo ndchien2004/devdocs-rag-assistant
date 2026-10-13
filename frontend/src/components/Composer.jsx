@@ -1,13 +1,22 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import AdvancedOptions from './AdvancedOptions.jsx'
 import TopicSelect from './TopicSelect.jsx'
-import { ArrowUpIcon } from './icons.jsx'
+import { ArrowUpIcon, StopIcon } from './icons.jsx'
 
 const MAX_QUESTION = 1000
 const MAX_HEIGHT = 220
 
 /** Khung nhập câu hỏi: tự giãn chiều cao, Enter để gửi, Shift+Enter xuống dòng. */
-export default function Composer({ onSend, disabled, topic, onTopicChange, options, onOptionsChange, autoFocus = false }) {
+export default function Composer({
+  onSend,
+  onStop,
+  disabled,
+  topic,
+  onTopicChange,
+  options,
+  onOptionsChange,
+  autoFocus = false,
+}) {
   const [value, setValue] = useState('')
   const ref = useRef(null)
 
@@ -55,6 +64,17 @@ export default function Composer({ onSend, disabled, topic, onTopicChange, optio
               {value.length}/{MAX_QUESTION}
             </span>
           )}
+          {disabled && onStop ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Dừng"
+              title="Dừng trả lời"
+              className="grid h-8 w-8 place-items-center rounded-lg bg-ink text-white transition hover:bg-ink-soft"
+            >
+              <StopIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : (
           <button
             type="submit"
             disabled={disabled || !value.trim()}
@@ -64,6 +84,7 @@ export default function Composer({ onSend, disabled, topic, onTopicChange, optio
           >
             <ArrowUpIcon className="h-4 w-4" />
           </button>
+          )}
         </div>
       </div>
     </form>
