@@ -15,23 +15,25 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, dang
     <dialog
       ref={ref}
       onCancel={onCancel}
-      className="m-auto w-full max-w-sm rounded-2xl border border-line bg-canvas p-0 text-ink shadow-2xl backdrop:bg-ink/30 backdrop:backdrop-blur-[2px]"
+      className="glass-strong m-auto w-full max-w-sm rounded-3xl p-0 text-ink backdrop:bg-slate-900/15 backdrop:backdrop-blur-sm"
     >
       <div className="px-5 pt-5 pb-4">
-        <h2 className="font-serif text-lg font-semibold">{title}</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">{message}</p>
       </div>
       <div className="flex justify-end gap-2 px-5 pb-5">
         <button
           onClick={onCancel}
-          className="rounded-lg border border-line-strong bg-white px-3.5 py-1.5 text-sm text-ink-soft transition hover:text-ink"
+          className="rounded-full border border-line bg-white/70 px-4 py-1.5 text-sm text-ink-soft transition hover:bg-white hover:text-ink"
         >
           Hủy
         </button>
         <button
           onClick={onConfirm}
-          className={`rounded-lg px-3.5 py-1.5 text-sm font-medium text-white transition ${
-            danger ? 'bg-danger hover:bg-danger/90' : 'bg-accent hover:bg-accent-strong'
+          className={`px-4 py-1.5 text-sm font-medium ${
+            danger
+              ? 'rounded-full bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-[0_6px_18px_rgba(225,29,72,0.28),inset_0_1px_0_rgba(255,255,255,0.35)] transition hover:-translate-y-px'
+              : 'btn-cyan'
           }`}
         >
           {confirmLabel}

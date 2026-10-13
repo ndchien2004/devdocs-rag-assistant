@@ -22,13 +22,11 @@ export default function SourceList({ messageId, sources, openIndex, onToggle, on
               type="button"
               onClick={() => onToggle(active ? null : s.index)}
               aria-expanded={active}
-              className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition ${
-                active
-                  ? 'border-accent/40 bg-accent-soft text-ink'
-                  : 'border-line bg-white text-ink-soft hover:border-line-strong hover:text-ink'
+              className={`chip inline-flex max-w-full items-center gap-1.5 px-3 py-1 text-xs ${
+                active ? '!border-accent/45 !bg-accent-soft/90 text-ink' : 'text-ink-soft hover:text-ink'
               }`}
             >
-              <span className="font-semibold text-accent">{s.index}</span>
+              <span className="font-semibold text-accent-strong">{s.index}</span>
               <span className="truncate">{s.fileName}</span>
               <span className="shrink-0 text-muted">· {location(s, true)}</span>
             </button>
@@ -37,7 +35,7 @@ export default function SourceList({ messageId, sources, openIndex, onToggle, on
       </div>
 
       {open && (
-        <div data-role="source-snippet" className="mt-2 rounded-xl border border-line bg-white px-3.5 py-3 text-sm">
+        <div data-role="source-snippet" className="mt-2.5 rounded-2xl border border-slate-900/[0.06] bg-white/30 px-4 py-3 text-sm shadow-[inset_0_1px_0_#fff]">
           <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted">
             <span>
               <span className="font-medium text-ink-soft">{open.fileName}</span> — {location(open)}
@@ -46,7 +44,7 @@ export default function SourceList({ messageId, sources, openIndex, onToggle, on
           </div>
           <p className="leading-relaxed text-ink-soft">{open.snippet}</p>
           {open.documentId && open.fileName?.toLowerCase().endsWith('.pdf') && (availableDocumentIds.includes(open.documentId)
-            ? <button type="button" onClick={() => onOpenPdf?.(open)} className="mt-2 text-xs font-medium text-accent hover:underline">Mở PDF tại {location(open)}</button>
+            ? <button type="button" onClick={() => onOpenPdf?.(open)} className="mt-2.5 rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent-strong transition hover:bg-accent hover:text-white">Mở PDF tại {location(open)}</button>
             : <p className="mt-2 text-xs text-muted">PDF này đã bị xóa khỏi thư viện; trích dẫn được giữ trong lịch sử.</p>)}
         </div>
       )}

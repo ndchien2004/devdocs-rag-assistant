@@ -39,7 +39,7 @@ export default function Composer({
   return (
     <form
       onSubmit={submit}
-      className="rounded-2xl border border-line-strong bg-white px-3.5 pt-3 pb-2.5 shadow-[0_2px_12px_rgba(31,30,29,0.05)] transition focus-within:border-[#c9c5b6] focus-within:shadow-[0_2px_16px_rgba(31,30,29,0.08)]"
+      className="glass liquid-sheen relative rounded-[28px] px-4 pt-3.5 pb-3 transition-shadow duration-200 focus-within:shadow-[0_0_0_0.5px_rgba(15,23,42,0.08),0_18px_48px_-12px_rgba(15,23,42,0.18),0_0_0_3px_rgba(14,116,144,0.10),inset_0_1px_1px_rgba(255,255,255,1)]"
     >
       <textarea
         ref={ref}
@@ -71,7 +71,7 @@ export default function Composer({
               onClick={onStop}
               aria-label="Dừng"
               title="Dừng trả lời"
-              className="grid h-8 w-8 place-items-center rounded-lg bg-ink text-white transition hover:bg-ink-soft"
+              className="grid h-10 w-10 place-items-center rounded-full bg-ink text-white shadow-[0_6px_18px_rgba(15,23,42,0.25)] transition hover:bg-ink-soft active:scale-95"
             >
               <StopIcon className="h-3.5 w-3.5" />
             </button>
@@ -81,9 +81,9 @@ export default function Composer({
             disabled={disabled || !value.trim()}
             aria-label="Gửi"
             title="Gửi (Enter)"
-            className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:bg-accent/35"
+            className="btn-cyan grid h-10 w-10 place-items-center"
           >
-            <ArrowUpIcon className="h-4 w-4" />
+            <ArrowUpIcon className="h-[18px] w-[18px]" />
           </button>
           )}
         </div>

@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { api } from '../api/client.js'
 import { topicLabel } from '../constants.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import { LoadingOverlay } from './Overlay.jsx'
 import StatusDot, { statusLabel } from './StatusDot.jsx'
 import UploadPanel from './UploadPanel.jsx'
 const PdfViewer = lazy(() => import('./PdfViewer.jsx'))
@@ -26,8 +27,8 @@ function FileBadge({ fileName }) {
   const pdf = fileName.toLowerCase().endsWith('.pdf')
   return (
     <span
-      className={`grid h-8 w-8 shrink-0 place-items-center rounded-md text-[9px] font-semibold tracking-wide ${
-        pdf ? 'bg-accent-soft text-accent-strong' : 'bg-bubble text-ink-soft'
+      className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl text-[9px] font-semibold tracking-wide ring-1 ring-white/80 ${
+        pdf ? 'bg-accent-soft text-accent-strong' : 'bg-slate-100/90 text-ink-soft'
       }`}
     >
       {pdf ? 'PDF' : 'MD'}
@@ -64,7 +65,7 @@ function DocumentList({ documents, busyId, onAction, onPreview }) {
         <li
           key={d.id}
           data-role="document-row"
-          className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-hover"
+          className="group flex items-center gap-2.5 rounded-2xl px-2 py-1.5 transition hover:bg-white/55"
         >
           <FileBadge fileName={d.fileName} />
           <div className="min-w-0 flex-1">
@@ -110,7 +111,7 @@ function DocumentTable({ documents, busyId, onAction, onPreview }) {
       </thead>
       <tbody>
         {documents.map((d) => (
-          <tr key={d.id} data-role="document-row" className="group border-b border-line/70 transition hover:bg-hover/60">
+          <tr key={d.id} data-role="document-row" className="group border-b border-line/70 transition hover:bg-white/50">
             <td className="py-2 pr-2 pl-2">
               <div className="flex min-w-0 items-center gap-2.5">
                 <FileBadge fileName={d.fileName} />
@@ -189,7 +190,7 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
   // --- Thu gọn: dải icon mảnh
   if (mode === 'collapsed') {
     return (
-      <aside className="flex w-14 shrink-0 flex-col items-center gap-1.5 border-r border-line bg-panel py-3">
+      <aside className="glass flex w-14 shrink-0 flex-col items-center gap-1.5 rounded-3xl py-3">
         <IconButton label="Mở thanh tài liệu" onClick={() => onModeChange('open')}>
           <PanelLeftIcon />
         </IconButton>
@@ -218,14 +219,16 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
   const expanded = mode === 'expanded'
   return (
     <aside
-      className={`flex shrink-0 flex-col border-r border-line bg-panel transition-[width] duration-300 ease-out ${
+      className={`glass flex shrink-0 flex-col overflow-hidden rounded-3xl transition-[width] duration-300 ease-out ${
         expanded ? 'w-1/2 min-w-[26rem]' : 'w-72'
       }`}
     >
       <div className="flex h-14 shrink-0 items-center justify-between px-3">
-        <div className="flex items-center gap-2 pl-1">
-          <BookIcon className="h-5 w-5 text-accent" />
-          <span className="font-serif text-[17px] font-semibold tracking-tight">DevDocs</span>
+        <div className="flex items-center gap-2.5 pl-1">
+          <span className="btn-cyan grid h-8 w-8 place-items-center !rounded-xl">
+            <BookIcon className="h-[17px] w-[17px]" />
+          </span>
+          <span className="text-[16px] font-semibold tracking-tight">DevDocs</span>
         </div>
         <IconButton label="Thu gọn thanh bên" onClick={() => onModeChange('collapsed')}>
           <PanelLeftIcon />
@@ -255,14 +258,14 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
       <section className="mx-3 mb-3 border-b border-line pb-3">
         <div className="mb-1 flex items-center justify-between px-1">
           <span className="text-xs font-medium text-muted">Cuộc trò chuyện</span>
-          <button type="button" onClick={onNewConversation} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-hover">+ Mới</button>
+          <button type="button" onClick={onNewConversation} className="rounded-full px-2.5 py-1 text-xs font-medium text-accent-strong transition hover:bg-white/70">+ Mới</button>
         </div>
         <ul className="max-h-40 space-y-0.5 overflow-y-auto">
-          {conversations.map((session) => <li key={session.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 ${session.id === activeConversationId ? 'bg-accent-soft' : 'hover:bg-hover'}`}>
+          {conversations.map((session) => <li key={session.id} className={`group flex items-center gap-1 rounded-2xl px-3 py-1.5 transition ${session.id === activeConversationId ? 'bg-accent-soft/85 font-medium text-accent-strong ring-1 ring-accent/25' : 'hover:bg-white/55'}`}>
             <button type="button" onClick={() => onOpenConversation(session.id)} className="min-w-0 flex-1 truncate text-left text-sm">{session.title}</button>
             <div className="hidden shrink-0 gap-1 group-hover:flex group-focus-within:flex">
-              <button type="button" aria-label={`Đổi tên ${session.title}`} title="Đổi tên" onClick={() => renameSession(session)} className="rounded px-1 text-xs text-muted hover:text-ink">✎</button>
-              <button type="button" aria-label={`Xóa ${session.title}`} title="Xóa" onClick={() => deleteSession(session)} className="rounded px-1 text-xs text-danger">×</button>
+              <button type="button" aria-label={`Đổi tên ${session.title}`} title="Đổi tên" onClick={() => renameSession(session)} className="grid h-6 w-6 place-items-center rounded-full text-xs text-muted transition hover:bg-white hover:text-ink">✎</button>
+              <button type="button" aria-label={`Xóa ${session.title}`} title="Xóa" onClick={() => deleteSession(session)} className="grid h-6 w-6 place-items-center rounded-full text-sm text-danger transition hover:bg-rose-50">×</button>
             </div>
           </li>)}
         </ul>
@@ -273,7 +276,7 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
         {!loading && documents.length === 0 && !error && (
           <div className="px-2 py-6 text-center text-sm text-muted">
             <p>Chưa có tài liệu nào.</p>
-            <button onClick={() => setShowUpload(true)} className="mt-1 text-accent hover:underline">
+            <button onClick={() => setShowUpload(true)} className="btn-cyan mt-3 px-4 py-1.5 text-sm font-medium">
               Nạp tài liệu đầu tiên
             </button>
           </div>
@@ -290,7 +293,7 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
         <p className="border-t border-line px-4 py-2.5 text-xs text-danger">{actionError ?? error}</p>
       )}
       {dialog}
-      {activePreview && <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 text-sm text-white">Đang tải trình xem PDF…</div>}><PdfViewer key={activePreview.id} url={api.pdfUrl(activePreview.id)} fileName={activePreview.fileName} fileSize={activePreview.fileSize} initialPage={1} onClose={() => setActivePreview(null)} /></Suspense>}
+      {activePreview && <Suspense fallback={<LoadingOverlay>Đang tải trình xem PDF…</LoadingOverlay>}><PdfViewer key={activePreview.id} url={api.pdfUrl(activePreview.id)} fileName={activePreview.fileName} fileSize={activePreview.fileSize} initialPage={1} onClose={() => setActivePreview(null)} /></Suspense>}
     </aside>
   )
 }

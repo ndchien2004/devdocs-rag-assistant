@@ -68,7 +68,11 @@ Tài nguyên: `resources/prompts/rag-system.st`, `rag-user.st` · `db/migration/
 do PgVectorStore tự tạo) · `eval/eval-dataset.json`.
 Frontend: `src/App.jsx` (layout, giữ state tài liệu + tin nhắn), `components/DocumentSidebar.jsx` (3 chế độ
 collapsed/open/expanded, lưu localStorage), `pages/ChatPage.jsx`, `components/Composer.jsx`,
-`AnswerMessage.jsx` (biến `[n]` thành nút), `SourceList.jsx`, `api/client.js`. Màu định nghĩa trong `src/index.css` (`@theme`).
+`AnswerMessage.jsx` (biến `[n]` thành nút), `SourceList.jsx`, `api/client.js`. Màu (token theo vai trò: `accent`, `muted`, `line`…) định nghĩa trong `src/index.css` (`@theme`), cùng các utility
+kính `glass` / `glass-thin` / `glass-strong`, `liquid-sheen`, `btn-cyan`, `chip`; nền trắng thuần, kính tách khỏi nền nhờ viền phản quang + bóng đổ.
+Phần tử có `backdrop-filter` giam `position: fixed` bên trong nó và làm popup tràn ra ngoài bị vẽ sai → `glass` đặt blur
+trên `::after` (đừng chuyển lại lên chính panel); modal / overlay vẫn render qua `Portal` (`components/Overlay.jsx`);
+`<dialog>` mở bằng `showModal()` thì không bị ảnh hưởng.
 
 ## Quy tắc bắt buộc
 

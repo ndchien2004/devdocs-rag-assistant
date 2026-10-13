@@ -47,10 +47,12 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
 
   if (!partial && !found) {
     return (
-      <div data-role="assistant" data-found="false" className="flex gap-3 text-ink-soft">
-        <InfoIcon className="mt-1 h-[18px] w-[18px] shrink-0 text-muted" />
+      <div data-role="assistant" data-found="false" className="glass-thin flex gap-3 rounded-3xl px-5 py-4 text-ink-soft">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100/80">
+          <InfoIcon className="h-[18px] w-[18px] text-muted" />
+        </span>
         <div>
-          <p className="font-serif text-[16.5px] leading-7">{answer}</p>
+          <p className="text-[15.5px] leading-7">{answer}</p>
           <p className="mt-1 text-sm text-muted">Thử diễn đạt lại câu hỏi, bỏ lọc chủ đề, hoặc nạp thêm tài liệu.</p>
         </div>
       </div>
@@ -73,8 +75,9 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
   // Model quên ghi [n] (hay gặp với model nhỏ): backend vẫn giữ câu trả lời và trả mọi đoạn đã dùng làm nguồn.
   const uncited = !partial && sources.length > 0 && ![...citedIndexes(answer)].some((n) => validIndexes.has(n))
   return (
-    <div data-role="assistant" data-found="true" data-streaming={streaming ? 'true' : undefined}>
-      <div className={`markdown font-serif text-[16.5px] leading-[1.7] text-ink ${streaming ? 'streaming' : ''}`}>
+    <div data-role="assistant" data-found="true" data-streaming={streaming ? 'true' : undefined}
+      className="glass-thin rounded-3xl rounded-tl-lg px-5 py-4">
+      <div className={`markdown text-[15.5px] leading-[1.75] text-ink ${streaming ? 'streaming' : ''}`}>
         <ReactMarkdown
           rehypePlugins={[rehypeHighlight]}
           components={{
@@ -86,14 +89,14 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
                     type="button"
                     onClick={() => showSource(index)}
                     title="Xem nguồn"
-                    className="mx-[1px] inline-grid h-[18px] min-w-[18px] place-items-center rounded-md bg-accent-soft px-1 align-[2px] font-sans text-[11px] font-semibold text-accent-strong transition hover:bg-accent hover:text-white"
+                    className="mx-[1px] inline-grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent-soft px-1.5 align-[2px] text-[11px] font-semibold text-accent-strong ring-1 ring-accent/15 transition hover:bg-accent hover:text-white"
                   >
                     {String(children).replace(/[[\]]/g, '')}
                   </button>
                 )
               }
               return (
-                <a href={href} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">
+                <a href={href} target="_blank" rel="noreferrer" className="text-accent-strong underline underline-offset-2">
                   {children}
                 </a>
               )
@@ -105,7 +108,7 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
       </div>
       {stopped && !answer && <p className="text-sm text-muted">Đã dừng trước khi có câu trả lời.</p>}
       {uncited && (
-        <p data-role="uncited-warning" className="mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-ink-soft">
+        <p data-role="uncited-warning" className="mt-3 rounded-2xl border border-amber-300/50 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-900">
           ⚠ Câu trả lời này không có trích dẫn nên có thể không dựa trên tài liệu. Hãy đối chiếu với các đoạn nguồn bên dưới.
         </p>
       )}
