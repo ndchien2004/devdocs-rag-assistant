@@ -22,9 +22,10 @@ public record RagProperties(
         @DefaultValue("3000") @Min(100) int maxContextTokens,
 
         // --- Ingestion ---
-        @DefaultValue("500") @Min(50) int chunkSize,
+        // Mặc định = cấu hình chọn sau Phase 4 (E1 + E4), khớp application.yml. Baseline đặc tả: 500 / 0.
+        @DefaultValue("150") @Min(50) int chunkSize,
         /** 0 = TokenTextSplitter (baseline); &gt; 0 = OverlapTextSplitter (thí nghiệm E4). */
-        @DefaultValue("0") @Min(0) int chunkOverlap,
+        @DefaultValue("60") @Min(0) int chunkOverlap,
         @DefaultValue("200") @Min(0) int minChunkSizeChars,
         @DefaultValue("10") @Min(0) int minChunkLengthToEmbed,
         @DefaultValue("30") @Min(0) int minPageChars,
