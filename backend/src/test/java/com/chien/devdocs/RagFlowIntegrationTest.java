@@ -185,6 +185,11 @@ class RagFlowIntegrationTest {
 
         assertThat(logs).isGreaterThanOrEqualTo(3);
         assertThat(notFound).isGreaterThanOrEqualTo(2);
+
+        chat(Map.of("question", "Propagation REQUIRES_NEW là gì?", "mode", "RAG_ADVISOR"));
+        Integer advisorLogs = jdbc.queryForObject(
+                "select count(*) from query_logs where mode = 'RAG_ADVISOR' and retrieval_ms is null", Integer.class);
+        assertThat(advisorLogs).isEqualTo(1);
     }
 
     @Test

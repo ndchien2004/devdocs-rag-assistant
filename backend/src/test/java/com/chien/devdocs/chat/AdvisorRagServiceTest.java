@@ -1,6 +1,7 @@
 package com.chien.devdocs.chat;
 
 import com.chien.devdocs.chat.dto.ChatRequest;
+import com.chien.devdocs.chat.dto.ChatResponse;
 import com.chien.devdocs.common.Topic;
 import com.chien.devdocs.config.RagProperties;
 import com.chien.devdocs.support.FakeAiModels;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,16 +33,18 @@ class AdvisorRagServiceTest {
 
     private VectorStore vectorStore;
     private FakeAiModels.CountingChatModel chatModel;
+    private QueryLogRepository queryLogRepository;
     private AdvisorRagService service;
 
     @BeforeEach
     void setUp() {
         vectorStore = mock(VectorStore.class);
         chatModel = new FakeAiModels.CountingChatModel();
+        queryLogRepository = mock(QueryLogRepository.class);
         RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 200, 10, 30,
                 DataSize.ofMegabytes(20), "./storage");
         service = new AdvisorRagService(ChatClient.builder(chatModel).build(), vectorStore, new PromptBuilder(),
-                new SourceMapper(), props,
+                new SourceMapper(), new QueryLogger(queryLogRepository), props,
                 new ClassPathResource("prompts/rag-system.st"), new ClassPathResource("prompts/rag-user.st"));
     }
 
@@ -71,6 +75,16 @@ class AdvisorRagServiceTest {
         assertThat(search.getValue().getTopK()).isEqualTo(3);
         assertThat(search.getValue().getSimilarityThreshold()).isEqualTo(0.5);
         assertThat(search.getValue().getFilterExpression()).isNotNull();
+
+        ArgumentCaptor<QueryLog> log = ArgumentCaptor.forClass(QueryLog.class);
+        verify(queryLogRepository).save(log.capture());
+        assertThat(log.getValue().getMode()).isEqualTo(RagMode.RAG_ADVISOR);
+        assertThat(log.getValue().getTopic()).isEqualTo(Topic.SPRING);
+        assertThat(log.getValue().getTopK()).isEqualTo(3);
+        assertThat(log.getValue().getRetrievedCount()).isEqualTo(2);
+        assertThat(log.getValue().getMaxScore()).isEqualTo(0.8);
+        assertThat(log.getValue().isFound()).isTrue();
+        assertThat(log.getValue().getRetrievalMs()).isNull();
     }
 
     @Test
@@ -99,6 +113,10 @@ class AdvisorRagServiceTest {
         assertThat(rag.found()).isFalse();
         assertThat(qa.found()).isFalse();
         assertThat(rag.sources()).isEmpty();
+        // Câu từ chối gốc giữ lại cho báo cáo E5, nhưng API trả câu chuẩn giống RAG thủ công.
+        assertThat(rag.answer()).isEqualTo("I can't answer that question.");
+        assertThat(rag.toResponse().answer()).isEqualTo(ChatResponse.NOT_FOUND_ANSWER);
+        verify(queryLogRepository, times(2)).save(any(QueryLog.class));
     }
 
     @Test

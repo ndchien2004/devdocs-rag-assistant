@@ -30,6 +30,10 @@ public class QueryLog {
     @Column(length = 20)
     private Topic topic;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private RagMode mode;
+
     @Column(name = "top_k", nullable = false)
     private int topK;
 
@@ -42,8 +46,9 @@ public class QueryLog {
     @Column(nullable = false)
     private boolean found;
 
-    @Column(name = "retrieval_ms", nullable = false)
-    private long retrievalMs;
+    /** NULL với advisor: retrieval nằm bên trong lời gọi LLM, không đo riêng được. */
+    @Column(name = "retrieval_ms")
+    private Long retrievalMs;
 
     @Column(name = "llm_ms")
     private Long llmMs;
@@ -57,10 +62,11 @@ public class QueryLog {
     protected QueryLog() {
     }
 
-    public QueryLog(String question, Topic topic, int topK, int retrievedCount, Double maxScore, boolean found,
-                    long retrievalMs, Long llmMs, long totalMs) {
+    public QueryLog(String question, Topic topic, RagMode mode, int topK, int retrievedCount, Double maxScore,
+                    boolean found, Long retrievalMs, Long llmMs, long totalMs) {
         this.question = question;
         this.topic = topic;
+        this.mode = mode;
         this.topK = topK;
         this.retrievedCount = retrievedCount;
         this.maxScore = maxScore;
@@ -83,6 +89,10 @@ public class QueryLog {
         return topic;
     }
 
+    public RagMode getMode() {
+        return mode;
+    }
+
     public int getTopK() {
         return topK;
     }
@@ -99,7 +109,7 @@ public class QueryLog {
         return found;
     }
 
-    public long getRetrievalMs() {
+    public Long getRetrievalMs() {
         return retrievalMs;
     }
 
