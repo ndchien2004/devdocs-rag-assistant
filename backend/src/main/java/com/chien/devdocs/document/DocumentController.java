@@ -4,6 +4,12 @@ import com.chien.devdocs.common.Topic;
 import com.chien.devdocs.document.dto.DocumentResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.HttpHeaders;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.io.IOException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +52,22 @@ public class DocumentController {
     @GetMapping("/{id}")
     public DocumentResponse get(@PathVariable UUID id) {
         return DocumentResponse.from(ingestionService.get(id));
+    }
+
+    @GetMapping(value = "/{id}/content", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<Resource> content(@PathVariable UUID id) throws IOException {
+        var document = ingestionService.get(id);
+        if (!"application/pdf".equalsIgnoreCase(document.getContentType())) {
+            return ResponseEntity.notFound().build();
+        }
+        var file = new FileSystemResource(ingestionService.filePath(document));
+        if (!file.exists()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .contentLength(Files.size(file.getFile().toPath()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.inline().filename(document.getFileName(), StandardCharsets.UTF_8).build().toString())
+                .body(file);
     }
 
     @DeleteMapping("/{id}")

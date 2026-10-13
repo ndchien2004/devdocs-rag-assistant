@@ -37,22 +37,23 @@ async function request(path, options = {}) {
 }
 
 /**
- * Hỏi đáp dạng streaming (chỉ mode MANUAL): gọi onSources(nguồn ứng viên) rồi onToken(text) cho từng mẩu,
- * trả về kết quả cuối (cùng dạng api.chat). Hủy bằng signal → ném AbortError và backend dừng gọi LLM.
+ * POST rồi đọc Server-Sent Events: gọi onSources(nguồn ứng viên) rồi onToken(text) cho từng mẩu, trả về kết quả cuối
+ * (sự kiện done). Hủy bằng signal → ném AbortError và backend dừng gọi LLM.
  */
-async function chatStream({ question, topic, topK, signal, onSources, onToken }) {
+async function postStream(path, body, { signal, onSources, onToken } = {}) {
   let response
   try {
-    response = await fetch(`${API_URL}/api/v1/chat/stream`, {
-      ...json('POST', { question, topic: topic || null, topK: topK || null }),
+    response = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(body),
       signal,
     })
   } catch (err) {
     if (err.name === 'AbortError') throw err
     throw networkError()
   }
-  // Lỗi trước khi stream bắt đầu (400, 503) vẫn là HTTP status + Problem Details như api.chat.
+  // Lỗi trước khi stream bắt đầu (400, 404, 503) vẫn là HTTP status + Problem Details như request thường.
   if (!response.ok) throw problemError(await readJson(response), response.status)
 
   for await (const { event, data } of readSse(response.body)) {
@@ -63,6 +64,10 @@ async function chatStream({ question, topic, topK, signal, onSources, onToken })
   }
   throw new ApiError('Kết nối bị ngắt trước khi nhận đủ câu trả lời.', 0)
 }
+
+/** Hỏi đáp một lượt dạng streaming (chỉ mode MANUAL). */
+const chatStream = ({ question, topic, topK, ...handlers }) =>
+  postStream('/api/v1/chat/stream', { question, topic: topic || null, topK: topK || null }, handlers)
 
 const json = (method, body) => ({
   method,
@@ -95,4 +100,18 @@ export const api = {
   deleteDocument: (id) => request(`/api/v1/documents/${id}`, { method: 'DELETE' }),
 
   reindexDocument: (id) => request(`/api/v1/documents/${id}/reindex`, { method: 'POST' }),
+
+  listConversations: () => request('/api/v1/conversations'),
+  getConversation: (id) => request(`/api/v1/conversations/${id}`),
+  createConversation: (documentIds) => request('/api/v1/conversations', json('POST', { documentIds })),
+  renameConversation: (id, title) => request(`/api/v1/conversations/${id}`, json('PATCH', { title })),
+  setConversationScope: (id, documentIds) => request(`/api/v1/conversations/${id}/scope`, json('PUT', { documentIds })),
+  deleteConversation: (id) => request(`/api/v1/conversations/${id}`, { method: 'DELETE' }),
+  /** Hỏi trong hội thoại dạng streaming; backend lưu xong hai tin nhắn rồi mới gửi done. */
+  askConversationStream: (id, { question, topic, topK, ...handlers }) =>
+    postStream(`/api/v1/conversations/${id}/messages/stream`,
+      { question, topic: topic || null, topK: topK || null }, handlers),
+  askConversation: (id, question, topic) =>
+    request(`/api/v1/conversations/${id}/messages`, json('POST', { question, topic: topic || null })),
+  pdfUrl: (id) => `${API_URL}/api/v1/documents/${id}/content`,
 }

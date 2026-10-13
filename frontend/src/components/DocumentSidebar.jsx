@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { api } from '../api/client.js'
 import { topicLabel } from '../constants.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import StatusDot, { statusLabel } from './StatusDot.jsx'
 import UploadPanel from './UploadPanel.jsx'
+const PdfViewer = lazy(() => import('./PdfViewer.jsx'))
 import {
   BookIcon,
   ExpandIcon,
@@ -56,7 +57,7 @@ function RowActions({ doc, busy, onAction, alwaysVisible }) {
 }
 
 /** Chế độ "open": danh sách gọn. */
-function DocumentList({ documents, busyId, onAction }) {
+function DocumentList({ documents, busyId, onAction, onPreview }) {
   return (
     <ul className="space-y-0.5">
       {documents.map((d) => (
@@ -67,9 +68,7 @@ function DocumentList({ documents, busyId, onAction }) {
         >
           <FileBadge fileName={d.fileName} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-ink" title={d.fileName}>
-              {d.fileName}
-            </p>
+            <button type="button" onClick={() => d.contentType === 'application/pdf' && onPreview(d)} className="block max-w-full truncate text-left text-sm text-ink hover:text-accent" title={d.contentType === 'application/pdf' ? `Mở ${d.fileName}` : d.fileName}>{d.fileName}</button>
             <p className="flex items-center gap-1.5 text-xs text-muted">
               <StatusDot status={d.status} title={d.errorMessage ?? undefined} />
               <span className="truncate">
@@ -86,7 +85,7 @@ function DocumentList({ documents, busyId, onAction }) {
 }
 
 /** Chế độ "expanded": bảng đầy đủ. */
-function DocumentTable({ documents, busyId, onAction }) {
+function DocumentTable({ documents, busyId, onAction, onPreview }) {
   return (
     <table className="w-full table-fixed text-sm">
       <colgroup>
@@ -115,9 +114,7 @@ function DocumentTable({ documents, busyId, onAction }) {
             <td className="py-2 pr-2 pl-2">
               <div className="flex min-w-0 items-center gap-2.5">
                 <FileBadge fileName={d.fileName} />
-                <span className="truncate" title={d.fileName}>
-                  {d.fileName}
-                </span>
+                <button type="button" onClick={() => d.contentType === 'application/pdf' && onPreview(d)} className="truncate text-left hover:text-accent" title={d.contentType === 'application/pdf' ? `Mở ${d.fileName}` : d.fileName}>{d.fileName}</button>
               </div>
             </td>
             <td className="truncate px-2 py-2 text-ink-soft">{topicLabel(d.topic)}</td>
@@ -140,11 +137,22 @@ function DocumentTable({ documents, busyId, onAction }) {
   )
 }
 
-export default function DocumentSidebar({ mode, onModeChange, documents, loading, error, onChanged }) {
+export default function DocumentSidebar({ mode, onModeChange, documents, loading, error, onChanged,
+  conversations = [], activeConversationId, onNewConversation, onOpenConversation, onRenameConversation, onDeleteConversation }) {
   const [showUpload, setShowUpload] = useState(false)
   const [busyId, setBusyId] = useState(null)
   const [confirm, setConfirm] = useState(null) // { action: 'delete' | 'reindex', doc }
   const [actionError, setActionError] = useState(null)
+  const [activePreview, setActivePreview] = useState(null)
+
+  function renameSession(session) {
+    const title = window.prompt('Tên cuộc trò chuyện', session.title)
+    if (title?.trim()) onRenameConversation(session.id, title.trim())
+  }
+
+  function deleteSession(session) {
+    if (window.confirm(`Xóa cuộc trò chuyện “${session.title}”?`)) onDeleteConversation(session.id)
+  }
 
   async function runConfirmed() {
     const { action, doc } = confirm
@@ -244,6 +252,22 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
 
       {showUpload && <UploadPanel onUploaded={onChanged} onClose={() => setShowUpload(false)} />}
 
+      <section className="mx-3 mb-3 border-b border-line pb-3">
+        <div className="mb-1 flex items-center justify-between px-1">
+          <span className="text-xs font-medium text-muted">Cuộc trò chuyện</span>
+          <button type="button" onClick={onNewConversation} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-hover">+ Mới</button>
+        </div>
+        <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+          {conversations.map((session) => <li key={session.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 ${session.id === activeConversationId ? 'bg-accent-soft' : 'hover:bg-hover'}`}>
+            <button type="button" onClick={() => onOpenConversation(session.id)} className="min-w-0 flex-1 truncate text-left text-sm">{session.title}</button>
+            <div className="hidden shrink-0 gap-1 group-hover:flex group-focus-within:flex">
+              <button type="button" aria-label={`Đổi tên ${session.title}`} title="Đổi tên" onClick={() => renameSession(session)} className="rounded px-1 text-xs text-muted hover:text-ink">✎</button>
+              <button type="button" aria-label={`Xóa ${session.title}`} title="Xóa" onClick={() => deleteSession(session)} className="rounded px-1 text-xs text-danger">×</button>
+            </div>
+          </li>)}
+        </ul>
+      </section>
+
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {loading && <p className="px-2 py-3 text-sm text-muted">Đang tải…</p>}
         {!loading && documents.length === 0 && !error && (
@@ -256,9 +280,9 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
         )}
         {!loading && documents.length > 0 &&
           (expanded ? (
-            <DocumentTable documents={documents} busyId={busyId} onAction={(action, doc) => setConfirm({ action, doc })} />
+            <DocumentTable documents={documents} busyId={busyId} onAction={(action, doc) => setConfirm({ action, doc })} onPreview={setActivePreview} />
           ) : (
-            <DocumentList documents={documents} busyId={busyId} onAction={(action, doc) => setConfirm({ action, doc })} />
+            <DocumentList documents={documents} busyId={busyId} onAction={(action, doc) => setConfirm({ action, doc })} onPreview={setActivePreview} />
           ))}
       </div>
 
@@ -266,6 +290,7 @@ export default function DocumentSidebar({ mode, onModeChange, documents, loading
         <p className="border-t border-line px-4 py-2.5 text-xs text-danger">{actionError ?? error}</p>
       )}
       {dialog}
+      {activePreview && <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 text-sm text-white">Đang tải trình xem PDF…</div>}><PdfViewer key={activePreview.id} url={api.pdfUrl(activePreview.id)} fileName={activePreview.fileName} fileSize={activePreview.fileSize} initialPage={1} onClose={() => setActivePreview(null)} /></Suspense>}
     </aside>
   )
 }

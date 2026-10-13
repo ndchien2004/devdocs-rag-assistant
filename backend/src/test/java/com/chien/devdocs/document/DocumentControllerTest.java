@@ -5,6 +5,7 @@ import com.chien.devdocs.common.exception.DocumentNotFoundException;
 import com.chien.devdocs.common.exception.DuplicateDocumentException;
 import com.chien.devdocs.common.exception.InvalidFileException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.mock.web.MockMultipartFile;
@@ -12,6 +13,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,6 +29,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(DocumentController.class)
 class DocumentControllerTest {
+
+    @TempDir Path tempDir;
 
     @Autowired
     MockMvc mvc;
@@ -90,6 +95,25 @@ class DocumentControllerTest {
         when(ingestionService.get(id)).thenThrow(new DocumentNotFoundException(id));
 
         mvc.perform(get("/api/v1/documents/{id}", id)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void servesStoredPdfInline() throws Exception {
+        UUID id = UUID.randomUUID();
+        Path pdf = tempDir.resolve("stored.pdf");
+        byte[] bytes = "%PDF-1.4 test".getBytes();
+        Files.write(pdf, bytes);
+        // storage_path trong DB là tương đối; đường dẫn thật do IngestionService.filePath (FileStorage.resolve) trả.
+        SourceDocument doc = new SourceDocument(id, "stored.pdf", "application/pdf", bytes.length, "c",
+                Topic.JAVA, "stored.pdf");
+        when(ingestionService.get(id)).thenReturn(doc);
+        when(ingestionService.filePath(doc)).thenReturn(pdf);
+
+        mvc.perform(get("/api/v1/documents/{id}/content", id))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("application/pdf"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("inline")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().bytes(bytes));
     }
 
     @Test

@@ -15,6 +15,7 @@ export default function Composer({
   onTopicChange,
   options,
   onOptionsChange,
+  showModeOption = true,
   autoFocus = false,
 }) {
   const [value, setValue] = useState('')
@@ -56,7 +57,7 @@ export default function Composer({
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <TopicSelect value={topic} onChange={onTopicChange} allLabel="Tất cả chủ đề" />
-          <AdvancedOptions value={options} onChange={onOptionsChange} />
+          <AdvancedOptions value={options} onChange={onOptionsChange} showMode={showModeOption} />
         </div>
         <div className="flex items-center gap-3">
           {value.length > MAX_QUESTION * 0.8 && (

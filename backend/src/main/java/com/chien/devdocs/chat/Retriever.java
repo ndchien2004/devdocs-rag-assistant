@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Bước retrieve của RAG: embedding câu hỏi rồi tìm top-K chunk gần nhất trong pgvector.
@@ -29,19 +30,40 @@ public class Retriever {
      * @return chunk có similarity ≥ threshold, sắp xếp theo score giảm dần
      */
     public List<Document> retrieve(String question, Topic topic, int topK, double similarityThreshold) {
-        return retrieve(vectorStore, question, topic, topK, similarityThreshold);
+        return retrieve(vectorStore, question, topic, List.of(), topK, similarityThreshold);
     }
 
     /** Tìm trên một VectorStore cụ thể (Phase 4: so sánh nhiều bảng vector với cấu hình chunk khác nhau). */
     public List<Document> retrieve(VectorStore store, String question, Topic topic, int topK,
                                    double similarityThreshold) {
+        return retrieve(store, question, topic, List.of(), topK, similarityThreshold);
+    }
+
+    public List<Document> retrieve(String question, Topic topic, List<UUID> documentIds, int topK,
+                                   double similarityThreshold) {
+        return retrieve(vectorStore, question, topic, documentIds, topK, similarityThreshold);
+    }
+
+    private List<Document> retrieve(VectorStore store, String question, Topic topic, List<UUID> documentIds,
+                                    int topK, double similarityThreshold) {
         SearchRequest.Builder search = SearchRequest.builder()
                 .query(question)
                 .topK(topK)
                 .similarityThreshold(similarityThreshold);
+        // Filter được dựng bằng builder từ enum/UUID → không bao giờ ghép chuỗi người dùng vào filter (NFR-06).
+        FilterExpressionBuilder filters = new FilterExpressionBuilder();
+        FilterExpressionBuilder.Op filter = null;
+        if (!documentIds.isEmpty()) {
+            // Ép về List<Object> để gọi đúng overload in(String, List<Object>) thay vì bản varargs.
+            filter = filters.in(ChunkMetadata.DOCUMENT_ID,
+                    documentIds.stream().<Object>map(UUID::toString).toList());
+        }
         if (topic != null) {
-            // Filter được dựng bằng builder từ enum → không bao giờ ghép chuỗi người dùng vào filter (NFR-06).
-            search.filterExpression(new FilterExpressionBuilder().eq(ChunkMetadata.TOPIC, topic.name()).build());
+            FilterExpressionBuilder.Op byTopic = filters.eq(ChunkMetadata.TOPIC, topic.name());
+            filter = filter == null ? byTopic : filters.and(filter, byTopic);
+        }
+        if (filter != null) {
+            search.filterExpression(filter.build());
         }
         try {
             return store.similaritySearch(search.build()).stream()

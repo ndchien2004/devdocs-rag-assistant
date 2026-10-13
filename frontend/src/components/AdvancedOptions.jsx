@@ -4,8 +4,11 @@ import { SlidersIcon } from './icons.jsx'
 
 const isDefault = (o) => o.topK === DEFAULT_CHAT_OPTIONS.topK && o.mode === DEFAULT_CHAT_OPTIONS.mode
 
-/** Nút "Tùy chọn nâng cao" trong khung nhập: chọn topK và cách thực hiện RAG (để so sánh như thí nghiệm E5). */
-export default function AdvancedOptions({ value, onChange }) {
+/**
+ * Nút "Tùy chọn nâng cao" trong khung nhập: chọn topK và cách thực hiện RAG (để so sánh như thí nghiệm E5).
+ * showMode = false: chỉ chọn topK (hội thoại đã lưu luôn dùng RAG thủ công — advisor không có phạm vi/lịch sử).
+ */
+export default function AdvancedOptions({ value, onChange, showMode = true }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
   const changed = !isDefault(value)
@@ -65,6 +68,7 @@ export default function AdvancedOptions({ value, onChange }) {
             </select>
           </label>
 
+          {showMode && (
           <fieldset className="mt-3.5">
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">Cách thực hiện RAG</legend>
             <div className="space-y-1">
@@ -91,6 +95,7 @@ export default function AdvancedOptions({ value, onChange }) {
               ))}
             </div>
           </fieldset>
+          )}
 
           {changed && (
             <button

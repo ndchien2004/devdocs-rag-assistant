@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { api } from '../api/client.js'
 import TopicSelect from './TopicSelect.jsx'
 import { UploadIcon, XIcon, IconButton } from './icons.jsx'
+const PdfViewer = lazy(() => import('./PdfViewer.jsx'))
 
 const ACCEPT = ['.pdf', '.md']
 
@@ -11,6 +12,8 @@ export default function UploadPanel({ onUploaded, onClose }) {
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [message, setMessage] = useState(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [pageCount, setPageCount] = useState(null)
   const inputRef = useRef(null)
 
   function pick(f) {
@@ -19,8 +22,13 @@ export default function UploadPanel({ onUploaded, onClose }) {
       setMessage({ ok: false, text: 'Chỉ hỗ trợ file .pdf và .md' })
       return
     }
+    if (f.size > 20 * 1024 * 1024) {
+      setMessage({ ok: false, text: 'File vượt quá giới hạn 20 MB. Hãy chọn file nhỏ hơn.' })
+      return
+    }
     setMessage(null)
     setFile(f)
+    setPageCount(null)
   }
 
   async function submit(e) {
@@ -35,7 +43,7 @@ export default function UploadPanel({ onUploaded, onClose }) {
           ? { ok: true, text: `Đã nạp ${doc.fileName} — ${doc.chunkCount} chunk` }
           : { ok: false, text: doc.errorMessage ?? `Trạng thái: ${doc.status}` },
       )
-      setFile(null)
+      if (doc.status === 'INDEXED') setFile(null)
       if (inputRef.current) inputRef.current.value = ''
       onUploaded()
     } catch (err) {
@@ -87,6 +95,11 @@ export default function UploadPanel({ onUploaded, onClose }) {
         />
       </label>
 
+      {file && <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted">
+        <span className="truncate">{(file.size / (1024 * 1024)).toFixed(2)} MB{pageCount ? ` · ${pageCount} trang` : ''}</span>
+        {file.name.toLowerCase().endsWith('.pdf') && <button type="button" onClick={() => setPreviewOpen(true)} className="shrink-0 text-accent hover:underline">Xem trước PDF</button>}
+      </div>}
+
       <div className="mt-2.5 flex items-center gap-2">
         <TopicSelect value={topic} onChange={setTopic} className="flex-1" />
         <button
@@ -94,13 +107,14 @@ export default function UploadPanel({ onUploaded, onClose }) {
           disabled={!file || busy}
           className="rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:bg-accent/40"
         >
-          {busy ? 'Đang index…' : 'Nạp'}
+          {busy ? 'Đang xử lý…' : 'Nạp'}
         </button>
       </div>
-      {busy && <p className="mt-2 text-xs text-muted">Đang đọc, cắt chunk và tạo embedding — file lớn có thể mất vài phút.</p>}
+      {busy && <p className="mt-2 text-xs text-muted" role="status">Đang tải lên, đọc tài liệu và tạo embedding. File lớn có thể mất vài phút.</p>}
       {message && (
         <p className={`mt-2 text-xs ${message.ok ? 'text-success' : 'text-danger'}`}>{message.text}</p>
       )}
+      {previewOpen && file && <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 text-sm text-white">Đang tải trình xem PDF…</div>}><PdfViewer file={file} fileName={file.name} initialPage={1} onPageCount={setPageCount} onClose={() => setPreviewOpen(false)} /></Suspense>}
     </form>
   )
 }

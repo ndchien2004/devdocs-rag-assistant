@@ -7,6 +7,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -62,6 +63,10 @@ public class SourceDocument {
 
     @Column(name = "indexed_at")
     private Instant indexedAt;
+
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     protected SourceDocument() {
     }

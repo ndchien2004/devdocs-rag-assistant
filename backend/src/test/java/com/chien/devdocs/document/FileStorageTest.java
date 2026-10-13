@@ -23,7 +23,7 @@ class FileStorageTest {
 
     @BeforeEach
     void setUp() {
-        storage = new FileStorage(new RagProperties(5, 0.5, 3000, 150, 60, 200, 10, 30,
+        storage = new FileStorage(new RagProperties(5, 0.5, 3000, 1000, 150, 60, 200, 10, 30,
                 DataSize.ofMegabytes(20), root.toString()));
     }
 

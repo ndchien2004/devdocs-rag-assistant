@@ -33,7 +33,7 @@ export function citedIndexes(text) {
   return cited
 }
 
-export default function AnswerMessage({ message }) {
+export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds }) {
   const { id, answer, found, latencyMs, streaming, stopped, interrupted, candidates = [] } = message
   const [openSource, setOpenSource] = useState(null)
 
@@ -59,6 +59,8 @@ export default function AnswerMessage({ message }) {
 
   function showSource(index) {
     setOpenSource(index)
+    const source = sources.find((s) => s.index === index)
+    if (source?.documentId) onOpenPdf?.(source)
     const el = document.getElementById(sourceElementId(id, index))
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -100,8 +102,17 @@ export default function AnswerMessage({ message }) {
         </ReactMarkdown>
       </div>
       {stopped && !answer && <p className="text-sm text-muted">Đã dừng trước khi có câu trả lời.</p>}
-      <SourceList messageId={id} sources={sources} openIndex={openSource} onToggle={setOpenSource} />
-      {stopped && answer && <p className="mt-2.5 text-xs text-muted">Đã dừng</p>}
+      <SourceList
+        messageId={id}
+        sources={sources}
+        openIndex={openSource}
+        onToggle={setOpenSource}
+        onOpenPdf={onOpenPdf}
+        availableDocumentIds={availableDocumentIds}
+      />
+      {stopped && answer && (
+        <p className="mt-2.5 text-xs text-muted">Đã dừng — câu trả lời dở dang không được lưu vào cuộc trò chuyện.</p>
+      )}
       {!partial && latencyMs != null && (
         <p className="mt-2.5 text-xs text-muted">{(latencyMs / 1000).toFixed(1)} giây</p>
       )}

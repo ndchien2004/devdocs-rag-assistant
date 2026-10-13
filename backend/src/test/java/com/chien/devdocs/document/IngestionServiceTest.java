@@ -19,6 +19,7 @@ import org.springframework.util.unit.DataSize;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.net.ConnectException;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -34,6 +35,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
+import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
 
 class IngestionServiceTest {
 
@@ -61,7 +66,7 @@ class IngestionServiceTest {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repository.findByChecksum(any())).thenReturn(Optional.empty());
 
-        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 20, 5, 30,
+        RagProperties props = new RagProperties(5, 0.5, 3000, 1000, 500, 0, 20, 5, 30,
                 DataSize.ofMegabytes(20), storageDir.toString());
         service = newService(props);
     }
@@ -135,7 +140,7 @@ class IngestionServiceTest {
 
     @Test
     void rejectsFileLargerThanLimit() {
-        RagProperties small = new RagProperties(5, 0.5, 3000, 500, 0, 20, 5, 30,
+        RagProperties small = new RagProperties(5, 0.5, 3000, 1000, 500, 0, 20, 5, 30,
                 DataSize.ofBytes(10), storageDir.toString());
         var svc = newService(small);
 
@@ -158,6 +163,16 @@ class IngestionServiceTest {
     }
 
     @Test
+    void duplicateUploadOfPendingDocumentDoesNotStartAnotherIndexingRun() {
+        SourceDocument pending = new SourceDocument(java.util.UUID.randomUUID(), "pending.pdf", "application/pdf",
+                10, "x", Topic.OTHER, "p");
+        when(repository.findByChecksum(any())).thenReturn(Optional.of(pending));
+        var pdf = new MockMultipartFile("file", "copy.pdf", "application/pdf", "%PDF-1.4 body".getBytes());
+
+        assertThatThrownBy(() -> service.upload(pdf, Topic.OTHER)).isInstanceOf(DuplicateDocumentException.class);
+    }
+
+    @Test
     void duplicateOfDocumentStillBeingProcessedIsRejectedWithoutIndexingTwice() {
         SourceDocument processing = new SourceDocument(java.util.UUID.randomUUID(), "old.md", "text/markdown",
                 10, "x", Topic.SPRING, "p");
@@ -171,6 +186,19 @@ class IngestionServiceTest {
                         .containsEntry("existingDocumentId", processing.getId()));
         verify(repository, never()).save(any());
         verify(vectorStore, never()).add(anyList());
+    }
+
+    @Test
+    void reindexOfProcessingDocumentDoesNotDeleteItsChunks() {
+        SourceDocument processing = new SourceDocument(java.util.UUID.randomUUID(), "pending.md", "text/markdown",
+                10, "x", Topic.OTHER, "p");
+        processing.markProcessing();
+        when(repository.findById(processing.getId())).thenReturn(Optional.of(processing));
+
+        assertThatThrownBy(() -> service.reindex(processing.getId()))
+                .isInstanceOf(DuplicateDocumentException.class)
+                .hasMessageContaining("đang được xử lý");
+        verify(vectorStore, never()).delete(any(Filter.Expression.class));
     }
 
     @Test
@@ -217,6 +245,40 @@ class IngestionServiceTest {
     }
 
     @Test
+    void blankPdfIsNotMarkedIndexed() throws Exception {
+        byte[] bytes;
+        try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            pdf.addPage(new PDPage()); pdf.save(output); bytes = output.toByteArray();
+        }
+        SourceDocument doc = service.upload(new MockMultipartFile("file", "blank.pdf", "application/pdf", bytes), Topic.OTHER);
+        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(doc.getErrorMessage()).contains("Không trích xuất được văn bản");
+        verify(vectorStore, never()).add(anyList());
+    }
+
+    @Test
+    void encryptedPdfGetsActionableFailure() throws Exception {
+        byte[] bytes;
+        try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            pdf.addPage(new PDPage());
+            pdf.protect(new StandardProtectionPolicy("owner-secret", "user-secret", new AccessPermission()));
+            pdf.save(output); bytes = output.toByteArray();
+        }
+        SourceDocument doc = service.upload(new MockMultipartFile("file", "locked.pdf", "application/pdf", bytes), Topic.OTHER);
+        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(doc.getErrorMessage()).contains("mật khẩu");
+        assertThat(doc.getErrorMessage()).doesNotContain("owner-secret");
+    }
+
+    @Test
+    void corruptedPdfGetsActionableFailure() {
+        SourceDocument doc = service.upload(new MockMultipartFile("file", "broken.pdf", "application/pdf",
+                "%PDF-1.4\nnot a PDF structure".getBytes(StandardCharsets.US_ASCII)), Topic.OTHER);
+        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(doc.getErrorMessage()).contains("PDF").doesNotContain("Exception");
+    }
+
+    @Test
     void embeddingConnectionFailureMarksFailedAndSurfacesAs503() {
         doThrow(new ResourceAccessException("I/O error", new ConnectException("Connection refused")))
                 .when(vectorStore).add(anyList());
@@ -227,7 +289,55 @@ class IngestionServiceTest {
         ArgumentCaptor<SourceDocument> saved = ArgumentCaptor.forClass(SourceDocument.class);
         verify(repository, org.mockito.Mockito.atLeastOnce()).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(DocumentStatus.FAILED);
-        assertThat(saved.getValue().getErrorMessage()).contains("I/O error");
+        // Lỗi do Ollama, không phải do file → thông báo không được bảo người dùng kiểm tra lại file.
+        assertThat(saved.getValue().getErrorMessage()).isEqualTo(IngestionService.AI_UNAVAILABLE_MESSAGE)
+                .doesNotContain("I/O error", "Connection refused");
+    }
+
+    @Test
+    void failureAfterThePdfWasReadDoesNotBlameTheFile() throws Exception {
+        byte[] bytes;
+        try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            pdf.addPage(page);
+            try (var content = new org.apache.pdfbox.pdmodel.PDPageContentStream(pdf, page)) {
+                content.beginText();
+                content.setFont(new org.apache.pdfbox.pdmodel.font.PDType1Font(
+                        org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(50, 700);
+                content.showText("Spring transactions use REQUIRED propagation by default for every method call.");
+                content.endText();
+            }
+            pdf.save(output); bytes = output.toByteArray();
+        }
+        doThrow(new IllegalStateException("relation vector_store does not exist")).when(vectorStore).add(anyList());
+
+        SourceDocument doc = service.upload(new MockMultipartFile("file", "ok.pdf", "application/pdf", bytes), Topic.OTHER);
+
+        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(doc.getErrorMessage()).isEqualTo(IngestionService.INDEXING_FAILED_MESSAGE)
+                .doesNotContain("vector_store");
+    }
+
+    @Test
+    void documentsLeftPendingOrProcessingByAPreviousRunAreMarkedFailedAtStartup() {
+        SourceDocument pending = new SourceDocument(java.util.UUID.randomUUID(), "a.pdf", "application/pdf",
+                10, "a", Topic.OTHER, "a");
+        SourceDocument processing = new SourceDocument(java.util.UUID.randomUUID(), "b.md", "text/markdown",
+                10, "b", Topic.OTHER, "b");
+        processing.markProcessing();
+        when(repository.search(null, DocumentStatus.PENDING)).thenReturn(List.of(pending));
+        when(repository.search(null, DocumentStatus.PROCESSING)).thenReturn(List.of(processing));
+
+        service.failInterruptedDocuments();
+
+        assertThat(List.of(pending, processing)).allSatisfy(doc -> {
+            assertThat(doc.getStatus()).isEqualTo(DocumentStatus.FAILED);
+            assertThat(doc.getErrorMessage()).isEqualTo(IngestionService.INTERRUPTED_MESSAGE);
+        });
+        verify(repository).save(pending);
+        verify(repository).save(processing);
+        verify(vectorStore, never()).delete(any(Filter.Expression.class));
     }
 
     @Test

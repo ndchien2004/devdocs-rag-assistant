@@ -51,6 +51,11 @@ public class PromptBuilder {
         return new BuiltContext(render(kept), List.copyOf(kept));
     }
 
+    /** Đếm token bằng cùng bộ đếm dùng cho CONTEXT (để giới hạn các phần khác của prompt, ví dụ lịch sử). */
+    public int countTokens(String text) {
+        return tokenCounter.applyAsInt(text);
+    }
+
     private static String render(List<Document> chunks) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < chunks.size(); i++) {

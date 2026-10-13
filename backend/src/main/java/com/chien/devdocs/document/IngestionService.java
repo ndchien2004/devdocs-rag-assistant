@@ -12,9 +12,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -22,6 +25,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.nio.file.Path;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -38,9 +42,12 @@ public class IngestionService {
 
     private static final Logger log = LoggerFactory.getLogger(IngestionService.class);
     private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
-    private static final int MAX_ERROR_LENGTH = 1000;
     static final String NO_TEXT_MESSAGE =
             "Không trích xuất được văn bản (có thể là PDF scan chỉ chứa ảnh — cần OCR, ngoài phạm vi dự án).";
+    static final String AI_UNAVAILABLE_MESSAGE =
+            "Không kết nối được tới mô hình AI (Ollama) khi tạo embedding. Kiểm tra Ollama rồi index lại tài liệu.";
+    static final String INDEXING_FAILED_MESSAGE = "Không tạo được chỉ mục cho tài liệu. Hãy thử index lại.";
+    static final String INTERRUPTED_MESSAGE = "Quá trình index bị gián đoạn. Hãy index lại tài liệu.";
 
     private final SourceDocumentRepository repository;
     private final VectorStore vectorStore;
@@ -89,22 +96,25 @@ public class IngestionService {
 
         // [3] Lưu bản ghi PENDING + file vật lý. Bản ghi cũ FAILED (cùng checksum) được dùng lại.
         SourceDocument doc;
+        String path;
         if (existing.isPresent()) {
             doc = existing.get();
-            String path = storage.save(doc.getId(), type, content);
+            path = storage.save(doc.getId(), type, content);
             doc.resetForRetry(fileName, type.canonicalContentType(), topic, path);
             log.info("Re-uploading previously failed document {} ({})", doc.getId(), fileName);
         } else {
             UUID id = UUID.randomUUID();
-            String path = storage.save(id, type, content);
+            path = storage.save(id, type, content);
             doc = new SourceDocument(id, fileName, type.canonicalContentType(), content.length, checksum, topic, path);
         }
         try {
             doc = repository.save(doc);
-        } catch (DataIntegrityViolationException e) {
-            // Hai request cùng file chạy song song: cả hai qua bước [2], request sau đụng uq_documents_checksum.
-            storage.delete(doc.getStoragePath());
-            throw repository.findByChecksum(checksum).map(IngestionService::duplicateOf).orElseThrow(() -> e);
+        } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException concurrentDuplicate) {
+            // Hai request cùng file chạy song song: cả hai qua bước [2], request sau đụng uq_documents_checksum
+            // (file mới) hoặc version (nạp lại bản FAILED). Chỉ xóa file khi đó là file mới của request này.
+            if (existing.isEmpty()) storage.delete(path);
+            throw repository.findByChecksum(checksum).map(IngestionService::duplicateOf)
+                    .orElseThrow(() -> concurrentDuplicate);
         }
 
         return index(doc);
@@ -120,6 +130,11 @@ public class IngestionService {
         return repository.findById(id).orElseThrow(() -> new DocumentNotFoundException(id));
     }
 
+    /** Đường dẫn thật của file gốc — {@code storage_path} trong DB là đường dẫn tương đối so với storage-dir. */
+    public Path filePath(SourceDocument doc) {
+        return storage.resolve(doc.getStoragePath());
+    }
+
     /** BR-ING-07: xóa chunk trong vector_store → xóa bản ghi → xóa file. */
     public void delete(UUID id) {
         SourceDocument doc = get(id);
@@ -131,7 +146,28 @@ public class IngestionService {
 
     /** BR-ING-07: xóa chunk cũ rồi chạy lại pipeline từ bước [5]. */
     public SourceDocument reindex(UUID id) {
-        return index(get(id));
+        SourceDocument doc = get(id);
+        if (doc.getStatus() == DocumentStatus.PENDING || doc.getStatus() == DocumentStatus.PROCESSING) {
+            throw DuplicateDocumentException.inProgress(id);
+        }
+        return index(doc);
+    }
+
+    /**
+     * Ingestion chạy đồng bộ trong request, nên bản ghi còn PENDING/PROCESSING lúc khởi động là do backend bị dừng
+     * giữa chừng. Chuyển về FAILED để nạp lại / re-index được (hai trạng thái kia đều bị chặn bằng 409).
+     * Giả định mỗi database chỉ có một backend đang chạy.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void failInterruptedDocuments() {
+        for (DocumentStatus stuck : List.of(DocumentStatus.PENDING, DocumentStatus.PROCESSING)) {
+            for (SourceDocument doc : repository.search(null, stuck)) {
+                doc.markFailed(INTERRUPTED_MESSAGE);
+                repository.save(doc);
+                log.warn("Document {} ({}) was left {} by a previous run → marked FAILED", doc.getId(),
+                        doc.getFileName(), stuck);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ pipeline [4] → [10]
@@ -139,12 +175,19 @@ public class IngestionService {
     SourceDocument index(SourceDocument doc) {
         long start = System.currentTimeMillis();
         doc.markProcessing();
-        doc = repository.save(doc);
+        try {
+            doc = repository.save(doc);
+        } catch (ObjectOptimisticLockingFailureException alreadyProcessing) {
+            throw DuplicateDocumentException.inProgress(doc.getId());
+        }
+        boolean readingFile = false;
         try {
             // Xóa chunk cũ trước (re-index / nạp lại) để không bị nhân đôi.
             deleteChunks(doc.getId());
 
+            readingFile = true;
             ChunkingPipeline.Result result = pipeline.chunk(doc);                          // [5] → [8]
+            readingFile = false;
             if (result.usablePages() == 0 || result.chunks().isEmpty()) {
                 log.warn("Document {} has no extractable text", doc.getId());
                 doc.markFailed(NO_TEXT_MESSAGE);
@@ -163,8 +206,8 @@ public class IngestionService {
                     embedMs, System.currentTimeMillis() - start);
             return doc;
         } catch (RuntimeException e) {
-            log.error("Indexing failed for {} ({}): {}", doc.getId(), doc.getFileName(), e.toString());
-            doc.markFailed(truncate(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            log.error("Indexing failed for {} ({})", doc.getId(), doc.getFileName(), e);
+            doc.markFailed(publicProcessingError(doc, e, readingFile));
             doc = repository.save(doc);
             if (AiServiceUnavailableException.isConnectivityProblem(e)) {
                 throw new AiServiceUnavailableException(e);
@@ -223,7 +266,22 @@ public class IngestionService {
         return true;
     }
 
-    private static String truncate(String message) {
-        return message.length() <= MAX_ERROR_LENGTH ? message : message.substring(0, MAX_ERROR_LENGTH) + "…";
+    /**
+     * Thông báo lưu vào {@code error_message} — không lộ nội dung exception.
+     * Chọn theo bước bị lỗi: chỉ đổ cho file khi chính bước đọc file thất bại ({@code readingFile}).
+     */
+    private static String publicProcessingError(SourceDocument doc, RuntimeException error, boolean readingFile) {
+        if (error instanceof InvalidFileException invalid) return invalid.getBody().getDetail();
+        if (AiServiceUnavailableException.isConnectivityProblem(error)) return AI_UNAVAILABLE_MESSAGE;
+        if (!readingFile) return INDEXING_FAILED_MESSAGE;
+        if (FileType.fromFileName(doc.getFileName()).orElse(null) == FileType.PDF) {
+            for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+                if (cause.getClass().getSimpleName().contains("InvalidPassword")) {
+                    return "PDF được bảo vệ bằng mật khẩu. Hãy gỡ mật khẩu rồi tải lên lại.";
+                }
+            }
+            return "Không đọc được PDF. File có thể bị hỏng hoặc không được hỗ trợ; hãy mở lại file và tải bản PDF hợp lệ.";
+        }
+        return "Không thể xử lý tài liệu. Hãy kiểm tra file rồi thử tải lên lại.";
     }
 }

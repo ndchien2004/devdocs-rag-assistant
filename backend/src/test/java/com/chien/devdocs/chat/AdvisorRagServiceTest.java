@@ -41,7 +41,7 @@ class AdvisorRagServiceTest {
         vectorStore = mock(VectorStore.class);
         chatModel = new FakeAiModels.CountingChatModel();
         queryLogRepository = mock(QueryLogRepository.class);
-        RagProperties props = new RagProperties(5, 0.5, 3000, 500, 0, 200, 10, 30,
+        RagProperties props = new RagProperties(5, 0.5, 3000, 1000, 500, 0, 200, 10, 30,
                 DataSize.ofMegabytes(20), "./storage");
         service = new AdvisorRagService(ChatClient.builder(chatModel).build(), vectorStore, new PromptBuilder(),
                 new SourceMapper(), new QueryLogger(queryLogRepository), props,

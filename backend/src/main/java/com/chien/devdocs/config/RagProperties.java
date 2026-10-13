@@ -20,6 +20,8 @@ public record RagProperties(
         @DefaultValue("5") @Min(1) @Max(10) int topK,
         @DefaultValue("0.5") @DecimalMin("0.0") @DecimalMax("1.0") double similarityThreshold,
         @DefaultValue("3000") @Min(100) int maxContextTokens,
+        /** Ngân sách token cho lịch sử hội thoại đưa vào prompt; 0 = không đưa lịch sử. */
+        @DefaultValue("1000") @Min(0) int maxHistoryTokens,
 
         // --- Ingestion ---
         // Mặc định = cấu hình chọn sau Phase 4 (E1 + E4), khớp application.yml. Baseline đặc tả: 500 / 0.
