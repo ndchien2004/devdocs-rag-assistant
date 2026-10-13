@@ -53,38 +53,62 @@ public class RagService {
     }
 
     public RagAnswer answer(ChatRequest request) {
+        Prepared p = prepare(request);
+        if (!p.hasContext()) {
+            return notFound(p);
+        }
+        long llmStart = System.currentTimeMillis();
+        String answer = callLlm(p.context().text(), p.question());                          // [5]
+        long llmMs = System.currentTimeMillis() - llmStart;
+        log.info("LLM: {} context chunks → {} chars answer in {} ms", p.context().chunks().size(),
+                answer.length(), llmMs);
+        return finish(p, answer, llmMs);
+    }
+
+    /**
+     * Kết quả các bước [2] → [4], dùng chung cho {@link #answer} và streaming.
+     *
+     * @param context {@code null} khi không có chunk nào vượt ngưỡng (BR-QRY-03)
+     */
+    record Prepared(ChatRequest request, String question, int topK, List<Document> hits, Double maxScore,
+                    PromptBuilder.BuiltContext context, long retrievalMs, long startMs) {
+
+        boolean hasContext() {
+            return context != null;
+        }
+    }
+
+    Prepared prepare(ChatRequest request) {
         long start = System.currentTimeMillis();
         String question = normalize(request.question());                                    // [2]
         int topK = request.topKOrDefault(props.topK());
 
-        long retrievalStart = System.currentTimeMillis();
         List<Document> hits = retriever.retrieve(question, request.topic(), topK,          // [3]
                 props.similarityThreshold());
-        long retrievalMs = System.currentTimeMillis() - retrievalStart;
+        long retrievalMs = System.currentTimeMillis() - start;
         Double maxScore = hits.isEmpty() ? null : hits.getFirst().getScore();
         log.info("Retrieve: topic={} topK={} → {} hits (max score {}) in {} ms",
                 request.topic(), topK, hits.size(), maxScore, retrievalMs);
 
-        if (hits.isEmpty()) {                                                               // BR-QRY-03
-            long total = System.currentTimeMillis() - start;
-            saveLog(question, request, topK, 0, null, false, retrievalMs, null, total);
-            return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
-        }
+        PromptBuilder.BuiltContext context = hits.isEmpty()
+                ? null : promptBuilder.buildContext(hits, props.maxContextTokens());       // [4]
+        return new Prepared(request, question, topK, hits, maxScore, context, retrievalMs, start);
+    }
 
-        PromptBuilder.BuiltContext context = promptBuilder.buildContext(hits, props.maxContextTokens()); // [4]
+    /** BR-QRY-03: không có chunk nào → trả "không tìm thấy", không gọi LLM. */
+    RagAnswer notFound(Prepared p) {
+        long total = System.currentTimeMillis() - p.startMs();
+        saveLog(p, false, null, total);
+        return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
+    }
 
-        long llmStart = System.currentTimeMillis();
-        String answer = callLlm(context.text(), question);                                  // [5]
-        long llmMs = System.currentTimeMillis() - llmStart;
-        log.info("LLM: {} context chunks → {} chars answer in {} ms", context.chunks().size(),
-                answer.length(), llmMs);
-
+    /** Bước [6] → [7] sau khi đã có câu trả lời đầy đủ của LLM. */
+    RagAnswer finish(Prepared p, String answer, long llmMs) {
         boolean found = !RefusalDetector.isRefusal(answer);
-        List<SourceDto> sources = found ? sourceMapper.toSources(context.chunks(), answer) : List.of(); // [6]
-
-        long total = System.currentTimeMillis() - start;
-        saveLog(question, request, topK, hits.size(), maxScore, found, retrievalMs, llmMs, total);  // [7]
-        return new RagAnswer(answer, found, sources, total, true, hits.size());
+        List<SourceDto> sources = found ? sourceMapper.toSources(p.context().chunks(), answer) : List.of(); // [6]
+        long total = System.currentTimeMillis() - p.startMs();
+        saveLog(p, found, llmMs, total);                                                     // [7]
+        return new RagAnswer(answer, found, sources, total, true, p.hits().size());
     }
 
     private String callLlm(String context, String question) {
@@ -109,9 +133,8 @@ public class RagService {
         return Normalizer.normalize(text.strip(), Normalizer.Form.NFC);
     }
 
-    private void saveLog(String question, ChatRequest request, int topK, int retrievedCount, Double maxScore,
-                         boolean found, long retrievalMs, Long llmMs, long totalMs) {
-        queryLogger.save(new QueryLog(question, request.topic(), RagMode.MANUAL, topK, retrievedCount, maxScore,
-                found, retrievalMs, llmMs, totalMs));
+    private void saveLog(Prepared p, boolean found, Long llmMs, long totalMs) {
+        queryLogger.save(new QueryLog(p.question(), p.request().topic(), RagMode.MANUAL, p.topK(), p.hits().size(),
+                p.maxScore(), found, p.retrievalMs(), llmMs, totalMs));
     }
 }
