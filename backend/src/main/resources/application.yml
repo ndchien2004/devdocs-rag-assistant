@@ -1,8 +1,13 @@
 spring:
   application:
     name: devdocs-rag-assistant
+  config:
+    # Đọc cùng file .env (ở thư mục gốc repo) với docker compose → DB_PORT, CHAT_MODEL... chỉ khai báo một nơi.
+    # ../.env khi chạy từ backend/ (mvnw), .env khi IDE chạy từ thư mục gốc. Không có file thì bỏ qua;
+    # biến môi trường thật vẫn được ưu tiên hơn giá trị trong .env.
+    import: optional:file:../.env[.properties],optional:file:.env[.properties]
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:${DB_PORT:5432}/devdocs}
+    url: ${DB_URL:jdbc:postgresql://localhost:${DB_PORT:5432}/${DB_NAME:devdocs}}
     username: ${DB_USERNAME:devdocs}
     password: ${DB_PASSWORD:devdocs}
   jpa:

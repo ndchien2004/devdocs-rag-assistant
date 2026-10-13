@@ -73,8 +73,9 @@ Yêu cầu: Docker, Java 21+, Node 20.19+ (không cần cài Maven — dùng `./
 ```bash
 # 1. Hạ tầng: PostgreSQL + pgvector, Ollama
 cp .env.example .env                       # đổi DB_PORT nếu cổng 5432 đã bị chiếm
-docker compose up -d
-# có GPU NVIDIA: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+docker compose up -d --wait                # --wait: đợi Postgres sẵn sàng (healthcheck) rồi mới trả về
+# có GPU NVIDIA: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --wait
+# Container có restart: unless-stopped → lần sau chỉ cần Docker Desktop đang chạy là Postgres/Ollama tự lên.
 
 # 2. Tải model (một lần)
 docker exec -it devdocs-ollama ollama pull bge-m3
@@ -82,7 +83,7 @@ docker exec -it devdocs-ollama ollama pull qwen2.5:7b     # máy yếu: qwen2.5:
 
 # 3. Backend — http://localhost:8080, Swagger UI: http://localhost:8080/swagger-ui.html
 cd backend
-./mvnw spring-boot:run                     # đọc biến môi trường DB_PORT, CHAT_MODEL, OLLAMA_BASE_URL...
+./mvnw spring-boot:run                     # Windows PowerShell: .\mvnw.cmd spring-boot:run
 
 # 4. Nạp tài liệu mẫu (từ thư mục gốc repo)
 ./scripts/ingest-samples.sh
@@ -91,8 +92,23 @@ cd backend
 cd frontend && npm install && npm run dev
 ```
 
-Biến môi trường chính (xem [`.env.example`](.env.example)): `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `OLLAMA_BASE_URL`,
-`CHAT_MODEL`, `EMBEDDING_MODEL`, `STORAGE_DIR`, `CORS_ALLOWED_ORIGINS`. Không có secret nào trong repo.
+Biến môi trường chính (xem [`.env.example`](.env.example)): `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`,
+`OLLAMA_BASE_URL`, `CHAT_MODEL`, `EMBEDDING_MODEL`, `STORAGE_DIR`, `CORS_ALLOWED_ORIGINS`. Không có secret nào trong repo.
+Backend **đọc cùng file `.env`** với docker compose (`spring.config.import`), nên chỉ cần khai báo một nơi; biến môi
+trường thật (ví dụ `$env:DB_PORT` trong PowerShell) vẫn được ưu tiên hơn `.env`.
+
+### Lỗi thường gặp khi chạy local
+
+| Triệu chứng | Nguyên nhân | Cách sửa |
+|---|---|---|
+| Backend dừng ngay: `Không kết nối được PostgreSQL ở localhost:5432 (Connection refused)` | Container Postgres chưa chạy (Docker Desktop tắt, hoặc chưa `up`) | Bật Docker Desktop → `docker compose up -d --wait` → chạy lại backend |
+| Như trên nhưng `docker compose ps` thấy Postgres ở cổng khác (`0.0.0.0:5433->5432`) | `DB_PORT` trong `.env` khác cổng backend đang dùng | Sửa `DB_PORT` trong `.env` ở thư mục gốc repo — backend và compose cùng đọc file này |
+| `password authentication failed for user "devdocs"` | Cổng 5432 đang bị PostgreSQL cài sẵn trên máy (Windows) chiếm | Đặt `DB_PORT=5433` trong `.env`, rồi `docker compose up -d --wait` |
+| Backend chạy, nhưng hỏi đáp / upload báo 503 *"Không kết nối được tới mô hình AI (Ollama)"* | Container Ollama chưa chạy | `docker compose up -d --wait` |
+| Lỗi `model "bge-m3" not found` (hoặc `qwen2.5…`) | Chưa tải model | `docker exec devdocs-ollama ollama list` để xem, `ollama pull <model>` để tải (chỉ một lần) |
+
+Backend **không gọi Ollama khi khởi động** — lỗi lúc `spring-boot:run` gần như luôn do PostgreSQL. Bật *Start Docker
+Desktop when you sign in* trong Settings của Docker Desktop để khỏi phải nhớ bước này.
 
 > Đổi embedding model = phải **index lại toàn bộ** (vector của hai model khác nhau không so sánh được) và sửa
 > `spring.ai.vectorstore.pgvector.dimensions` cho đúng số chiều.
@@ -419,7 +435,7 @@ cd backend && ./mvnw verify      # unit + integration test + kiểm tra coverage
 | E2E UI | `node frontend/scripts/e2e-screenshots.mjs` (cần backend + frontend + Chrome/Edge) |
 | Chất lượng RAG | `./scripts/run-eval.sh`, `./scripts/run-experiments.sh`, `python scripts/check_prompt_injection.py 20` |
 
-Kết quả hiện tại: **122 test pass**; coverage dòng của service layer 90–100% (tổng 95.9%), JaCoCo chặn build nếu < 70%.
+Kết quả hiện tại: **125 test pass**; coverage dòng của service layer 90–100% (tổng 95.9%), JaCoCo chặn build nếu < 70%.
 GitHub Actions chạy `mvn verify` + build frontend cho mỗi push.
 
 Đối chiếu các test case trong đặc tả (mục 14):
