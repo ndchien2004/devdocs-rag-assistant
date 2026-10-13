@@ -2,6 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: devdocs-postgres
+    restart: unless-stopped        # tự bật lại khi Docker Desktop khởi động (trừ khi đã `docker compose stop`)
     environment:
       POSTGRES_DB: ${DB_NAME:-devdocs}
       POSTGRES_USER: ${DB_USERNAME:-devdocs}
@@ -19,6 +20,7 @@ services:
   ollama:
     image: ollama/ollama
     container_name: devdocs-ollama
+    restart: unless-stopped
     ports:
       - "11434:11434"
     volumes:
