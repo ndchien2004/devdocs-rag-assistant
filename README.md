@@ -16,7 +16,8 @@ Mọi con số trong README đều lấy từ lần chạy thật (báo cáo JSO
 
 - [Kiến trúc](#kiến-trúc) · [Tech stack](#tech-stack) · [Cài đặt và chạy](#cài-đặt-và-chạy) · [Ví dụ API](#ví-dụ-gọi-api)
 - Kết quả: [Phase 0](#phase-0--embedding-hoạt-động-thế-nào) · [Phase 1](#phase-1--ingestion) ·
-  [Phase 3 — baseline](#phase-3--evaluation) · [Phase 4 — thí nghiệm](#phase-4--tối-ưu-và-so-sánh-số-liệu-thật)
+  [Phase 3 — baseline](#phase-3--evaluation) · [Phase 4 — thí nghiệm](#phase-4--tối-ưu-và-so-sánh-số-liệu-thật) ·
+  [Streaming (SSE)](#mở-rộng--streaming-câu-trả-lời-sse)
 - [Screenshot](#screenshot) · [Kiểm thử](#kiểm-thử) · [Hạn chế và hướng phát triển](#hạn-chế-và-hướng-phát-triển)
 
 ## Kiến trúc
@@ -124,6 +125,26 @@ curl -X POST http://localhost:8080/api/v1/chat -H "Content-Type: application/jso
   ],
   "latencyMs": 2310
 }
+```
+
+```bash
+# Hỏi đáp dạng streaming (SSE, chỉ mode MANUAL) — -N để curl in từng sự kiện ngay khi nhận
+curl -N -X POST http://localhost:8080/api/v1/chat/stream -H "Content-Type: application/json" \
+     -d '{"question": "Khác nhau giữa REQUIRED và REQUIRES_NEW?"}'
+```
+
+```text
+event:sources
+data:[{"index":1,"fileName":"02_Spring_Boot.pdf","pageNumber":5, …}, …]
+
+event:token
+data:{"text":"REQUIRED"}
+
+event:token
+data:{"text":" tham gia transaction hiện có"}
+…
+event:done
+data:{"answer":"REQUIRED tham gia transaction hiện có … [1]","found":true,"sources":[…],"latencyMs":2310}
 ```
 
 ```bash
@@ -341,6 +362,33 @@ thật (giải thích dài trải nhiều đoạn) cần đo lại.
 - Thỉnh thoảng lẫn vài chữ tiếng Trung / Indonesia, hoặc chép lại câu nhắc trong prompt — giới hạn của model 3B;
   model 7B+ (`CHAT_MODEL=qwen2.5:7b`) sẽ tốt hơn nhưng không vừa 4 GB VRAM của máy dev.
 
+## Mở rộng — Streaming câu trả lời (SSE)
+
+`POST /api/v1/chat` chỉ trả về khi LLM viết xong cả câu (1–8 s với qwen2.5:3b, lâu hơn với 7B) — trong lúc đó người dùng
+không biết hệ thống còn chạy hay đã treo. `POST /api/v1/chat/stream` đẩy từng token ngay khi model sinh ra; tổng thời
+gian không đổi nhưng chữ đầu tiên xuất hiện sau khoảng retrieval + một token. Nút **Dừng** ngắt câu trả lời đang sinh.
+
+Các quyết định thiết kế:
+
+- **SSE qua `POST` + `fetch`, không dùng `EventSource`** — `EventSource` chỉ gửi được `GET` (câu hỏi 1000 ký tự phải
+  nằm trên URL). Dùng `POST` thì tái sử dụng nguyên `ChatRequest` và validation. Trình đọc SSE
+  ([`api/sse.js`](frontend/src/api/sse.js)) giải mã UTF-8 dạng stream để chữ tiếng Việt bị cắt giữa hai gói mạng không vỡ.
+- **Controller trả `Flux<ServerSentEvent>`** (Spring MVC hỗ trợ kiểu reactive, không cần WebFlux server). Khi client
+  ngắt kết nối, Spring hủy subscription → **lời gọi Ollama bị hủy theo**, GPU không sinh tiếp câu trả lời bị bỏ.
+- **Retrieval chạy xong trước khi stream bắt đầu** — sau khi gửi status 200 thì không đổi sang 503 được nữa. Nhờ vậy
+  Ollama tắt vẫn là `503` Problem Details, và câu ngoài phạm vi vẫn **không gọi LLM** (chỉ một sự kiện `done`).
+- **Cùng một pipeline với `/chat`**: `RagService` tách thành `prepare` → (gọi LLM | stream) → `finish`, nên đánh số
+  context, lọc prompt injection, nhận diện từ chối, lọc nguồn được trích dẫn và `query_logs` giống hệt nhau.
+- **`data:` luôn là JSON, kể cả token** — SSE cắt `data` theo dòng và bỏ dấu cách đầu; token của LLM hay bắt đầu bằng
+  dấu cách hoặc chứa `\n` (code block).
+- Nguồn ứng viên gửi trước (`sources`) để `[n]` bấm được ngay khi đang stream; `done` mang danh sách cuối cùng. Câu từ
+  chối chỉ nhận ra được khi đủ câu → `done` mang `found=false` và giao diện chuyển sang kiểu "không tìm thấy".
+- `spring.mvc.async.request-timeout: 200s` — mặc định của Tomcat (~30 s) sẽ cắt câu trả lời dài.
+
+Kiểm chứng với client Ollama thật của Spring AI (máy chủ Ollama giả trả token chậm): token đầu tiên tới sau 0.3 s, cả
+câu 1.3 s; Ollama ngừng gửi token quá `read-timeout` → sự kiện `error` 503; client ngắt ở giây thứ 3 → backend đóng
+kết nối tới Ollama ngay ở token kế tiếp (không chạy đủ 30 token) và vẫn ghi `query_logs`.
+
 ## Screenshot
 
 Giao diện tối giản tông màu ấm: chat ở giữa, **tài liệu nằm ở thanh bên** (thu gọn thành dải icon · danh sách gọn ·
@@ -365,12 +413,13 @@ cd backend && ./mvnw verify      # unit + integration test + kiểm tra coverage
 | Loại | Nội dung |
 |---|---|
 | Unit (Mockito) | `TextCleaner` (NFC, header/footer, code block), `DocumentLoader`, `OverlapTextSplitter`, `IngestionService` (validate, 409, FAILED, 503), `PromptBuilder` (đánh số, cắt theo token), `SourceMapper` (parse `[1][3]`), `RagService` (không có hit → không gọi LLM), `AdvisorRagService` (advisor thật + chat model giả), `EvaluationService` (Hit@K, MRR), `PromptInjectionGuard` |
-| Web slice (MockMvc) | Mã lỗi 400 / 404 / 409 / 503 dạng Problem Details, validate `ChatRequest` (rỗng, > 1000 ký tự, topK) |
-| Integration (Testcontainers pgvector) | Upload → metadata trong `vector_store` → 409 → hỏi đáp có nguồn → câu ngoài phạm vi không gọi LLM → lọc topic → `query_logs` → thí nghiệm chunking → re-index không nhân đôi → xóa không còn chunk. Embedding / chat model giả nên **không cần Ollama** |
+| Web slice (MockMvc) | Mã lỗi 400 / 404 / 409 / 503 dạng Problem Details, validate `ChatRequest` (rỗng, > 1000 ký tự, topK); `/chat/stream` trả `text/event-stream` với `data` JSON, chỉ nhận mode MANUAL |
+| Streaming (`StepVerifier`) | Thứ tự `sources → token* → done`, không có hit → chỉ `done` và không gọi LLM, từ chối → câu chuẩn, lỗi giữa chừng → `error` 503 / 500 không lộ chi tiết, hủy → lời gọi LLM bị hủy và vẫn ghi log |
+| Integration (Testcontainers pgvector) | Upload → metadata trong `vector_store` → 409 → hỏi đáp có nguồn → câu ngoài phạm vi không gọi LLM → lọc topic → `query_logs` → streaming SSE (có / không có kết quả) → thí nghiệm chunking → re-index không nhân đôi → xóa không còn chunk. Embedding / chat model giả nên **không cần Ollama** |
 | E2E UI | `node frontend/scripts/e2e-screenshots.mjs` (cần backend + frontend + Chrome/Edge) |
 | Chất lượng RAG | `./scripts/run-eval.sh`, `./scripts/run-experiments.sh`, `python scripts/check_prompt_injection.py 20` |
 
-Kết quả hiện tại: **106 test pass**; coverage dòng của service layer 90–100% (tổng 95.3%), JaCoCo chặn build nếu < 70%.
+Kết quả hiện tại: **122 test pass**; coverage dòng của service layer 90–100% (tổng 95.9%), JaCoCo chặn build nếu < 70%.
 GitHub Actions chạy `mvn verify` + build frontend cho mỗi push.
 
 Đối chiếu các test case trong đặc tả (mục 14):
@@ -407,7 +456,7 @@ GitHub Actions chạy `mvn verify` + build frontend cho mỗi push.
 - Ingestion **đồng bộ** (file lớn giữ request lâu); chưa có xác thực / phân quyền; PDF scan cần OCR (ngoài phạm vi);
   Markdown không có "trang" nên `page_number` là số thứ tự mục.
 
-**Hướng phát triển** (theo mục "Phase mở rộng" của đặc tả): streaming câu trả lời (SSE); hội thoại nhiều lượt với
+**Hướng phát triển** (theo mục "Phase mở rộng" của đặc tả; streaming SSE đã xong): hội thoại nhiều lượt với
 chat memory + viết lại câu hỏi; hybrid search (pgvector + full-text `tsvector`) và re-ranking; ingestion bất đồng bộ
 (`@Async`, `202 Accepted` + polling); LLM-as-a-Judge đo độ trung thực; observability (Micrometer: token, độ trễ từng bước).
 
