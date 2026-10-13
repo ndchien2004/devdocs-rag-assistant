@@ -344,7 +344,8 @@ thật (giải thích dài trải nhiều đoạn) cần đo lại.
 ## Screenshot
 
 Giao diện tối giản tông màu ấm: chat ở giữa, **tài liệu nằm ở thanh bên** (thu gọn thành dải icon · danh sách gọn ·
-mở rộng chiếm nửa màn hình với bảng đầy đủ). Ảnh chụp tự động từ giao diện thật (backend + Ollama chạy local) bằng
+mở rộng chiếm nửa màn hình với bảng đầy đủ). Nút **Tùy chọn nâng cao** cạnh ô chủ đề cho chọn top-K và cách thực hiện
+RAG (`MANUAL` / `RAG_ADVISOR` / `QA_ADVISOR`) để tự so sánh như thí nghiệm E5. Ảnh chụp tự động từ giao diện thật (backend + Ollama chạy local) bằng
 [`frontend/scripts/e2e-screenshots.mjs`](frontend/scripts/e2e-screenshots.mjs) — script này đồng thời là kiểm thử e2e.
 
 | Màn hình chào | Trả lời có trích dẫn — bấm số để mở đoạn nguồn |
