@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.js'
+import { DEFAULT_CHAT_OPTIONS } from '../constants.js'
 import AnswerMessage from '../components/AnswerMessage.jsx'
 import Composer from '../components/Composer.jsx'
 import { BookIcon, NewChatIcon } from '../components/icons.jsx'
@@ -35,6 +36,7 @@ function Disclaimer() {
 
 export default function ChatPage({ messages, setMessages, indexedCount, docsLoading, onOpenDocuments }) {
   const [topic, setTopic] = useState('')
+  const [options, setOptions] = useState(DEFAULT_CHAT_OPTIONS)
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
 
@@ -47,7 +49,7 @@ export default function ChatPage({ messages, setMessages, indexedCount, docsLoad
     setMessages((prev) => [...prev, { id: nextId++, role: 'user', text: question }])
     setLoading(true)
     try {
-      const res = await api.chat({ question, topic })
+      const res = await api.chat({ question, topic, topK: Number(options.topK) || null, mode: options.mode })
       setMessages((prev) => [...prev, { id: nextId++, role: 'assistant', ...res }])
     } catch (err) {
       setMessages((prev) => [...prev, { id: nextId++, role: 'error', text: err.message }])
@@ -56,7 +58,17 @@ export default function ChatPage({ messages, setMessages, indexedCount, docsLoad
     }
   }
 
-  const composer = <Composer onSend={ask} disabled={loading} topic={topic} onTopicChange={setTopic} autoFocus />
+  const composer = (
+    <Composer
+      onSend={ask}
+      disabled={loading}
+      topic={topic}
+      onTopicChange={setTopic}
+      options={options}
+      onOptionsChange={setOptions}
+      autoFocus
+    />
+  )
 
   // --- Màn hình chào (chưa có tin nhắn)
   if (messages.length === 0) {

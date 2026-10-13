@@ -34,8 +34,9 @@ const json = (method, body) => ({
 })
 
 export const api = {
-  chat: ({ question, topic, topK }) =>
-    request('/api/v1/chat', json('POST', { question, topic: topic || null, topK: topK || null })),
+  /** topic / topK / mode bỏ trống = để backend dùng mặc định (mọi chủ đề, app.rag.top-k, MANUAL). */
+  chat: ({ question, topic, topK, mode }) =>
+    request('/api/v1/chat', json('POST', { question, topic: topic || null, topK: topK || null, mode: mode || null })),
 
   listDocuments: ({ topic, status } = {}) => {
     const params = new URLSearchParams()
