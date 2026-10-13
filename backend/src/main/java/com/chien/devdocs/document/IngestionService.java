@@ -25,6 +25,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.nio.file.Path;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -89,7 +90,8 @@ public class IngestionService {
         String checksum = sha256(content);
         Optional<SourceDocument> existing = repository.findByChecksum(checksum);
         if (existing.isPresent() && existing.get().getStatus() != DocumentStatus.FAILED) {
-            throw new DuplicateDocumentException(existing.get().getId());
+            // INDEXED → trùng; PENDING / PROCESSING → request khác đang index, không index chồng lên.
+            throw duplicateOf(existing.get());
         }
 
         // [3] Lưu bản ghi PENDING + file vật lý. Bản ghi cũ FAILED (cùng checksum) được dùng lại.
@@ -97,23 +99,22 @@ public class IngestionService {
         String path;
         if (existing.isPresent()) {
             doc = existing.get();
-            path = storage.save(doc.getId(), type, content).toString();
+            path = storage.save(doc.getId(), type, content);
             doc.resetForRetry(fileName, type.canonicalContentType(), topic, path);
             log.info("Re-uploading previously failed document {} ({})", doc.getId(), fileName);
         } else {
             UUID id = UUID.randomUUID();
-            path = storage.save(id, type, content).toString();
+            path = storage.save(id, type, content);
             doc = new SourceDocument(id, fileName, type.canonicalContentType(), content.length, checksum, topic, path);
         }
         try {
             doc = repository.save(doc);
         } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException concurrentDuplicate) {
+            // Hai request cùng file chạy song song: cả hai qua bước [2], request sau đụng uq_documents_checksum
+            // (file mới) hoặc version (nạp lại bản FAILED). Chỉ xóa file khi đó là file mới của request này.
             if (existing.isEmpty()) storage.delete(path);
-            SourceDocument winner = repository.findByChecksum(checksum).orElse(null);
-            if (winner != null) {
-                throw new DuplicateDocumentException(winner.getId());
-            }
-            throw concurrentDuplicate;
+            throw repository.findByChecksum(checksum).map(IngestionService::duplicateOf)
+                    .orElseThrow(() -> concurrentDuplicate);
         }
 
         return index(doc);
@@ -129,6 +130,11 @@ public class IngestionService {
         return repository.findById(id).orElseThrow(() -> new DocumentNotFoundException(id));
     }
 
+    /** Đường dẫn thật của file gốc — {@code storage_path} trong DB là đường dẫn tương đối so với storage-dir. */
+    public Path filePath(SourceDocument doc) {
+        return storage.resolve(doc.getStoragePath());
+    }
+
     /** BR-ING-07: xóa chunk trong vector_store → xóa bản ghi → xóa file. */
     public void delete(UUID id) {
         SourceDocument doc = get(id);
@@ -142,7 +148,7 @@ public class IngestionService {
     public SourceDocument reindex(UUID id) {
         SourceDocument doc = get(id);
         if (doc.getStatus() == DocumentStatus.PENDING || doc.getStatus() == DocumentStatus.PROCESSING) {
-            throw new DuplicateDocumentException(id);
+            throw DuplicateDocumentException.inProgress(id);
         }
         return index(doc);
     }
@@ -172,7 +178,7 @@ public class IngestionService {
         try {
             doc = repository.save(doc);
         } catch (ObjectOptimisticLockingFailureException alreadyProcessing) {
-            throw new DuplicateDocumentException(doc.getId());
+            throw DuplicateDocumentException.inProgress(doc.getId());
         }
         boolean readingFile = false;
         try {
@@ -208,6 +214,12 @@ public class IngestionService {
             }
             return doc;
         }
+    }
+
+    private static DuplicateDocumentException duplicateOf(SourceDocument existing) {
+        return existing.getStatus() == DocumentStatus.INDEXED
+                ? new DuplicateDocumentException(existing.getId())
+                : DuplicateDocumentException.inProgress(existing.getId());
     }
 
     private void deleteChunks(UUID documentId) {

@@ -1,12 +1,23 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import AdvancedOptions from './AdvancedOptions.jsx'
 import TopicSelect from './TopicSelect.jsx'
-import { ArrowUpIcon } from './icons.jsx'
+import { ArrowUpIcon, StopIcon } from './icons.jsx'
 
 const MAX_QUESTION = 1000
 const MAX_HEIGHT = 220
 
 /** Khung nhập câu hỏi: tự giãn chiều cao, Enter để gửi, Shift+Enter xuống dòng. */
-export default function Composer({ onSend, disabled, topic, onTopicChange, autoFocus = false }) {
+export default function Composer({
+  onSend,
+  onStop,
+  disabled,
+  topic,
+  onTopicChange,
+  options,
+  onOptionsChange,
+  showModeOption = true,
+  autoFocus = false,
+}) {
   const [value, setValue] = useState('')
   const ref = useRef(null)
 
@@ -44,13 +55,27 @@ export default function Composer({ onSend, disabled, topic, onTopicChange, autoF
         className="block max-h-[220px] w-full resize-none bg-transparent px-0.5 text-[15px] leading-6 text-ink placeholder:text-muted focus:outline-none"
       />
       <div className="mt-2.5 flex items-center justify-between gap-2">
-        <TopicSelect value={topic} onChange={onTopicChange} allLabel="Tất cả chủ đề" />
+        <div className="flex items-center gap-1.5">
+          <TopicSelect value={topic} onChange={onTopicChange} allLabel="Tất cả chủ đề" />
+          <AdvancedOptions value={options} onChange={onOptionsChange} showMode={showModeOption} />
+        </div>
         <div className="flex items-center gap-3">
           {value.length > MAX_QUESTION * 0.8 && (
             <span className="text-xs text-muted tabular-nums">
               {value.length}/{MAX_QUESTION}
             </span>
           )}
+          {disabled && onStop ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Dừng"
+              title="Dừng trả lời"
+              className="grid h-8 w-8 place-items-center rounded-lg bg-ink text-white transition hover:bg-ink-soft"
+            >
+              <StopIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : (
           <button
             type="submit"
             disabled={disabled || !value.trim()}
@@ -60,6 +85,7 @@ export default function Composer({ onSend, disabled, topic, onTopicChange, autoF
           >
             <ArrowUpIcon className="h-4 w-4" />
           </button>
+          )}
         </div>
       </div>
     </form>

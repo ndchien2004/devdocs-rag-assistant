@@ -1,8 +1,13 @@
 spring:
   application:
     name: devdocs-rag-assistant
+  config:
+    # Đọc cùng file .env (ở thư mục gốc repo) với docker compose → DB_PORT, CHAT_MODEL... chỉ khai báo một nơi.
+    # ../.env khi chạy từ backend/ (mvnw), .env khi IDE chạy từ thư mục gốc. Không có file thì bỏ qua;
+    # biến môi trường thật vẫn được ưu tiên hơn giá trị trong .env.
+    import: optional:file:../.env[.properties],optional:file:.env[.properties]
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:${DB_PORT:5432}/devdocs}
+    url: ${DB_URL:jdbc:postgresql://localhost:${DB_PORT:5432}/${DB_NAME:devdocs}}
     username: ${DB_USERNAME:devdocs}
     password: ${DB_PASSWORD:devdocs}
   jpa:
@@ -12,8 +17,12 @@ spring:
   mvc:
     problemdetails:
       enabled: true               # lỗi trả về theo RFC 9457
+    async:
+      # POST /chat/stream trả về Flux → chạy dạng async request. Mặc định của Tomcat (~30s) sẽ cắt ngang
+      # câu trả lời dài; đặt lớn hơn read-timeout của client Ollama (180s) để lỗi đến từ phía Ollama trước.
+      request-timeout: 200s
   http:
-    clients:                      # RestClient gọi Ollama — hết thời gian → 503 thay vì treo request
+    clients:                      # RestClient + WebClient (stream) gọi Ollama — hết thời gian → 503 thay vì treo
       connect-timeout: 5s
       read-timeout: 180s
   servlet:

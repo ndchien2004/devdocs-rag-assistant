@@ -51,6 +51,15 @@ export const FilesIcon = (p) => (
   <Icon {...p} d="M15 3H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7Zm0 0v4h4M3 8v11a2 2 0 0 0 2 2h9" />
 )
 
+export const StopIcon = ({ className = 'h-[18px] w-[18px]' }) => (
+  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+    <rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor" />
+  </svg>
+)
+export const SlidersIcon = (p) => (
+  <Icon {...p} d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4" />
+)
+
 /** Nút chỉ có icon, luôn có nhãn cho trình đọc màn hình và tooltip. */
 export function IconButton({ label, onClick, children, className = '', small = false, disabled = false }) {
   return (

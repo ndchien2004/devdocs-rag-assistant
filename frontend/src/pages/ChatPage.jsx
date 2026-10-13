@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.js'
+import { DEFAULT_CHAT_OPTIONS } from '../constants.js'
 import Composer from '../components/Composer.jsx'
 import { BookIcon, NewChatIcon } from '../components/icons.jsx'
 
@@ -46,27 +47,57 @@ export default function ChatPage({ conversation, messages, indexedCount, docsLoa
   const [topic, setTopic] = useState('')
   const [sending, setSending] = useState(false)
   const [temporary, setTemporary] = useState([])
+  const [options, setOptions] = useState(DEFAULT_CHAT_OPTIONS)
   const [localError, setLocalError] = useState(null)
   const bottomRef = useRef(null)
+  const abortRef = useRef(null)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, temporary, sending])
-  useEffect(() => { setTemporary([]); setLocalError(null); setTopic('') }, [conversation?.id])
+  // Đổi cuộc trò chuyện / rời trang khi đang stream → hủy request để backend dừng gọi LLM.
+  useEffect(() => { abortRef.current?.abort(); setTemporary([]); setLocalError(null); setTopic('') }, [conversation?.id])
+  useEffect(() => () => abortRef.current?.abort(), [])
 
+  /**
+   * Câu trả lời hiện dần theo từng token (streaming). Backend lưu xong câu hỏi + câu trả lời rồi mới gửi "done",
+   * nên khi xong chỉ cần tải lại cuộc trò chuyện. Dừng / lỗi giữa chừng thì backend không lưu gì.
+   */
   async function ask(question) {
     if (sending || !conversation) return
+    const conversationId = conversation.id
+    const answerId = `answer-${Date.now()}`
+    const updateAnswer = (patch) => setTemporary((prev) => prev.some((m) => m.id === answerId)
+      ? prev.map((m) => (m.id === answerId ? { ...m, ...patch(m) } : m))
+      : [...prev, { id: answerId, role: 'assistant', answer: '', candidates: [], sources: [], ...patch({ answer: '' }) }])
     setTemporary([{ id: `pending-${Date.now()}`, role: 'user', text: question }])
     setLocalError(null); setSending(true)
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
-      const updated = await api.askConversation(conversation.id, question, topic)
+      await api.askConversationStream(conversationId, {
+        question, topic, topK: Number(options.topK) || null, signal: controller.signal,
+        onSources: (candidates) => updateAnswer(() => ({ streaming: true, candidates })),
+        onToken: (text) => updateAnswer((m) => ({ streaming: true, answer: m.answer + text })),
+      })
+      const updated = await api.getConversation(conversationId)
       onConversationChange(updated); setTemporary([]); await onConversationsChanged()
     } catch (err) {
-      setTemporary([{ id: `failed-${Date.now()}`, role: 'user', text: question }])
+      if (err.name === 'AbortError') {
+        updateAnswer(() => ({ streaming: false, stopped: true, found: true }))
+        return
+      }
+      setTemporary((prev) => prev.map((m) => (m.id === answerId ? { ...m, streaming: false, interrupted: true } : m)))
       setLocalError(err.status === 503 ? 'Dịch vụ AI hiện chưa sẵn sàng. Hãy thử lại sau.' : 'Không thể tạo câu trả lời. Hãy thử lại.')
-    } finally { setSending(false) }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
+      setSending(false)
+    }
   }
 
   const allMessages = [...messages, ...temporary]
-  const composer = <Composer onSend={ask} disabled={sending || loading || !conversation} topic={topic} onTopicChange={setTopic} autoFocus />
+  // Chấm "đang tìm" chỉ hiện tới khi có chữ đầu tiên của câu trả lời.
+  const streamingAnswer = temporary.find((m) => m.role === 'assistant' && m.streaming && m.answer)
+  const composer = <Composer onSend={ask} onStop={() => abortRef.current?.abort()} disabled={sending || loading || !conversation}
+    topic={topic} onTopicChange={setTopic} options={options} onOptionsChange={setOptions} showModeOption={false} autoFocus />
 
   if (loading && !conversation) return <div className="grid h-full place-items-center text-sm text-muted" role="status">Đang mở cuộc trò chuyện…</div>
   if (!conversation) return <div className="m-auto max-w-lg px-6 text-center"><p className="text-sm text-danger">{error ?? 'Chưa có cuộc trò chuyện.'}</p><button onClick={onNewConversation} className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm text-white">Tạo cuộc trò chuyện</button></div>
@@ -98,7 +129,7 @@ export default function ChatPage({ conversation, messages, indexedCount, docsLoa
         ? <div key={m.id} className="flex justify-end"><div className="max-w-[85%] rounded-2xl bg-bubble px-4 py-2.5 leading-relaxed whitespace-pre-wrap text-ink">{m.text}</div></div>
         : m.role === 'error' ? <div key={m.id} className="rounded-xl border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger">{m.text}</div>
           : <Suspense key={m.id} fallback={<div role="status" className="text-sm text-muted">Đang tải câu trả lời…</div>}><AnswerMessage message={m} onOpenPdf={onOpenPdf} availableDocumentIds={documents.map((d) => d.id)} /></Suspense>)}
-      {sending && <Thinking />}{localError && <p role="alert" className="rounded-xl border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger">{localError}</p>}{error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {sending && !streamingAnswer && <Thinking />}{localError && <p role="alert" className="rounded-xl border border-danger/25 bg-danger/5 px-4 py-3 text-sm text-danger">{localError}</p>}{error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <div ref={bottomRef} />
     </div></div>
     <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">{composer}<Disclaimer /></div>

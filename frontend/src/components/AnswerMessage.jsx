@@ -23,11 +23,29 @@ export function linkCitations(text, validIndexes) {
     .join('')
 }
 
+/** Các số [n] đã xuất hiện trong text (bỏ qua code) — để hiện nguồn dần trong lúc stream. */
+export function citedIndexes(text) {
+  const cited = new Set()
+  text.split(CODE).forEach((part, i) => {
+    if (i % 2 === 1) return
+    for (const m of part.matchAll(CITATION)) m[1].split(',').forEach((n) => cited.add(Number(n.trim())))
+  })
+  return cited
+}
+
 export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds }) {
-  const { id, answer, found, sources, latencyMs } = message
+  const { id, answer, found, latencyMs, streaming, stopped, interrupted, candidates = [] } = message
   const [openSource, setOpenSource] = useState(null)
 
-  if (!found) {
+  // Chưa có chữ nào: ChatPage đang hiện chấm "đang tìm" (hoặc thông báo lỗi nếu bị ngắt).
+  if ((streaming || interrupted) && !answer) return null
+
+  // Đang stream / đã dừng / bị lỗi giữa chừng: chưa có kết quả cuối từ backend
+  // → nguồn = ứng viên đã được trích dẫn tới lúc này.
+  const partial = streaming || stopped || interrupted
+  const sources = partial ? candidates.filter((s) => citedIndexes(answer).has(s.index)) : message.sources
+
+  if (!partial && !found) {
     return (
       <div data-role="assistant" data-found="false" className="flex gap-3 text-ink-soft">
         <InfoIcon className="mt-1 h-[18px] w-[18px] shrink-0 text-muted" />
@@ -51,10 +69,10 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
     el.classList.add('flash')
   }
 
-  const validIndexes = new Set(sources.map((s) => s.index))
+  const validIndexes = new Set((partial ? candidates : sources).map((s) => s.index))
   return (
-    <div data-role="assistant" data-found="true">
-      <div className="markdown font-serif text-[16.5px] leading-[1.7] text-ink">
+    <div data-role="assistant" data-found="true" data-streaming={streaming ? 'true' : undefined}>
+      <div className={`markdown font-serif text-[16.5px] leading-[1.7] text-ink ${streaming ? 'streaming' : ''}`}>
         <ReactMarkdown
           rehypePlugins={[rehypeHighlight]}
           components={{
@@ -83,8 +101,21 @@ export default function AnswerMessage({ message, onOpenPdf, availableDocumentIds
           {linkCitations(answer, validIndexes)}
         </ReactMarkdown>
       </div>
-      <SourceList messageId={id} sources={sources} openIndex={openSource} onToggle={setOpenSource} onOpenPdf={onOpenPdf} availableDocumentIds={availableDocumentIds} />
-      {latencyMs != null && <p className="mt-2.5 text-xs text-muted">{(latencyMs / 1000).toFixed(1)} giây</p>}
+      {stopped && !answer && <p className="text-sm text-muted">Đã dừng trước khi có câu trả lời.</p>}
+      <SourceList
+        messageId={id}
+        sources={sources}
+        openIndex={openSource}
+        onToggle={setOpenSource}
+        onOpenPdf={onOpenPdf}
+        availableDocumentIds={availableDocumentIds}
+      />
+      {stopped && answer && (
+        <p className="mt-2.5 text-xs text-muted">Đã dừng — câu trả lời dở dang không được lưu vào cuộc trò chuyện.</p>
+      )}
+      {!partial && latencyMs != null && (
+        <p className="mt-2.5 text-xs text-muted">{(latencyMs / 1000).toFixed(1)} giây</p>
+      )}
     </div>
   )
 }

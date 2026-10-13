@@ -1,9 +1,12 @@
 package com.chien.devdocs.chat;
 
 import com.chien.devdocs.chat.dto.ChatRequest;
+import com.chien.devdocs.chat.dto.ChatResponse;
 import com.chien.devdocs.chat.dto.ConversationDtos;
 import com.chien.devdocs.common.Topic;
+import com.chien.devdocs.common.exception.ApiException;
 import com.chien.devdocs.common.exception.ConversationNotFoundException;
+import com.chien.devdocs.common.exception.GlobalExceptionHandler;
 import com.chien.devdocs.common.exception.InvalidDocumentScopeException;
 import com.chien.devdocs.document.DocumentStatus;
 import com.chien.devdocs.document.SourceDocument;
@@ -11,6 +14,9 @@ import com.chien.devdocs.document.SourceDocumentRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Set;
@@ -69,23 +75,54 @@ public class ConversationService {
      * suốt thời gian đó. Đọc phạm vi + lịch sử và ghi hai tin nhắn mới là hai transaction ngắn riêng.
      */
     public ConversationDtos.Response ask(UUID id, ConversationDtos.AskRequest request) {
-        AskContext context = transactions.execute(status -> {
+        AskContext context = loadContext(id);
+        // LLM lỗi → ném exception ở đây, chưa có gì được ghi.
+        var answer = ragService.answer(chatRequest(request), context.documentIds(), context.history());
+        return saveTurn(id, request, answer.toResponse());
+    }
+
+    /**
+     * Như {@link #ask} nhưng trả lời dạng streaming ({@link RagStreamEvent}). Hai tin nhắn được ghi <b>trước</b> khi
+     * phát sự kiện {@code done}, nên client tải lại hội thoại ngay sau {@code done} là thấy đủ.
+     * Stream lỗi hoặc bị hủy giữa chừng thì không ghi gì — giống {@link #ask} khi LLM lỗi.
+     * <p>
+     * Hội thoại không tồn tại / retrieval lỗi → ném exception ngay (HTTP 404 / 503), chưa mở stream.
+     */
+    public Flux<RagStreamEvent> askStream(UUID id, ConversationDtos.AskRequest request) {
+        AskContext context = loadContext(id);
+        return ragService.stream(chatRequest(request), context.documentIds(), context.history())
+                .concatMap(event -> event instanceof RagStreamEvent.Done done
+                        // JPA là blocking → không chạy trên thread của stream.
+                        ? Mono.fromCallable(() -> saveTurn(id, request, done.response()))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .thenReturn(event)
+                        : Mono.just(event))
+                .onErrorResume(e -> Mono.just(new RagStreamEvent.Failed(e instanceof ApiException api
+                        ? api.getBody() : GlobalExceptionHandler.internalError())));
+    }
+
+    private static ChatRequest chatRequest(ConversationDtos.AskRequest request) {
+        return new ChatRequest(request.question(), request.topic(), request.topK());
+    }
+
+    private AskContext loadContext(UUID id) {
+        return transactions.execute(status -> {
             Conversation conversation = require(id);
             List<ConversationMessage> all = conversation.getMessages();
             return new AskContext(List.copyOf(conversation.getDocumentIds()),
                     List.copyOf(all.subList(Math.max(0, all.size() - 12), all.size())));
         });
+    }
 
-        // LLM lỗi → ném exception ở đây, chưa có gì được ghi.
-        var answer = ragService.answer(new ChatRequest(request.question(), request.topic(), null),
-                context.documentIds(), context.history());
-
+    /** Lưu câu hỏi + câu trả lời đã chuẩn hóa (từ chối → câu "không tìm thấy" chuẩn, giống API). */
+    private ConversationDtos.Response saveTurn(UUID id, ConversationDtos.AskRequest request, ChatResponse answer) {
         return transactions.execute(status -> {
             // Đọc lại kèm khóa dòng: sequence_no tính từ số tin nhắn hiện có, nên hai lượt hỏi đồng thời phải ghi lần lượt.
             Conversation conversation = conversations.findWithLockById(id)
                     .orElseThrow(() -> new ConversationNotFoundException(id));
             conversation.addMessage(new ConversationMessage("USER", request.question().strip(), null, List.of()));
-            conversation.addMessage(new ConversationMessage("ASSISTANT", answer.answer(), answer.found(), answer.sources()));
+            conversation.addMessage(new ConversationMessage("ASSISTANT", answer.answer(), answer.found(),
+                    answer.sources()));
             return ConversationDtos.Response.from(conversations.save(conversation));
         });
     }

@@ -9,11 +9,15 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
 
 @Validated
 @RestController
@@ -42,6 +46,12 @@ public class EvaluationController {
     public EvaluationReport chunking(@Valid @RequestBody ChunkingExperimentRequest request) {
         return experimentService.runChunking(request.chunkSize(), request.chunkOverlapOrZero(),
                 request.strategyOrDefault(), request.toEvaluation());
+    }
+
+    /** Xóa mọi bảng thí nghiệm exp_* do /experiments/chunking tạo ra. Dữ liệu chính trong vector_store không bị đụng. */
+    @DeleteMapping("/experiments")
+    public Map<String, List<String>> dropExperiments() {
+        return Map.of("dropped", experimentService.dropExperimentTables());
     }
 
     /** E5: eval ở mức câu trả lời (gọi LLM thật) cho một RagMode. */

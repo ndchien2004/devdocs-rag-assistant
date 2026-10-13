@@ -60,7 +60,7 @@ public class DocumentController {
         if (!"application/pdf".equalsIgnoreCase(document.getContentType())) {
             return ResponseEntity.notFound().build();
         }
-        var file = new FileSystemResource(document.getStoragePath());
+        var file = new FileSystemResource(ingestionService.filePath(document));
         if (!file.exists()) return ResponseEntity.notFound().build();
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)

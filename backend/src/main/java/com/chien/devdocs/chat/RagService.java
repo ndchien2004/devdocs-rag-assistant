@@ -5,6 +5,7 @@ import com.chien.devdocs.chat.dto.ChatResponse;
 import com.chien.devdocs.chat.dto.SourceDto;
 import com.chien.devdocs.common.Topic;
 import com.chien.devdocs.common.exception.AiServiceUnavailableException;
+import com.chien.devdocs.common.exception.GlobalExceptionHandler;
 import com.chien.devdocs.config.RagProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,16 +13,25 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 
 /**
  * Phase 2 — RAG "thủ công" (mục 7.2): tự retrieve, tự ghép prompt, tự gọi LLM, tự map nguồn.
  * Viết tay toàn bộ để hiểu bản chất trước khi dùng Advisor có sẵn (Phase 4).
+ * <p>
+ * Chia thành {@link #prepare} → gọi LLM ({@link #answer} hoặc {@link #stream}) → {@link #finish}, để hỏi đáp thường,
+ * streaming và hội thoại đã lưu đi qua đúng cùng các bước.
  */
 @Service
 public class RagService {
@@ -35,20 +45,20 @@ public class RagService {
     private final PromptBuilder promptBuilder;
     private final SourceMapper sourceMapper;
     private final ChatClient chatClient;
-    private final QueryLogRepository queryLogRepository;
+    private final QueryLogger queryLogger;
     private final RagProperties props;
     private final Resource systemPrompt;
     private final Resource userPrompt;
 
     public RagService(Retriever retriever, PromptBuilder promptBuilder, SourceMapper sourceMapper,
-                      ChatClient chatClient, QueryLogRepository queryLogRepository, RagProperties props,
+                      ChatClient chatClient, QueryLogger queryLogger, RagProperties props,
                       @Value("classpath:prompts/rag-system.st") Resource systemPrompt,
                       @Value("classpath:prompts/rag-user.st") Resource userPrompt) {
         this.retriever = retriever;
         this.promptBuilder = promptBuilder;
         this.sourceMapper = sourceMapper;
         this.chatClient = chatClient;
-        this.queryLogRepository = queryLogRepository;
+        this.queryLogger = queryLogger;
         this.props = props;
         this.systemPrompt = systemPrompt;
         this.userPrompt = userPrompt;
@@ -68,16 +78,98 @@ public class RagService {
      *                    danh sách rỗng = không chọn tài liệu nào → trả "không tìm thấy", không retrieve
      */
     public RagAnswer answer(ChatRequest request, List<UUID> documentIds, List<ConversationMessage> history) {
+        Prepared p = prepare(request, documentIds, history);
+        if (!p.hasContext()) {
+            return notFound(p);
+        }
+        long llmStart = System.currentTimeMillis();
+        String answer = callLlm(p);                                                          // [5]
+        long llmMs = System.currentTimeMillis() - llmStart;
+        log.info("LLM: {} context chunks → {} chars answer in {} ms", p.context().chunks().size(),
+                answer.length(), llmMs);
+        return finish(p, answer, llmMs);
+    }
+
+    /** Streaming một lượt trên mọi tài liệu (không giới hạn phạm vi, không có lịch sử). */
+    public Flux<RagStreamEvent> stream(ChatRequest request) {
+        return stream(request, null, List.of());
+    }
+
+    /**
+     * Phiên bản streaming của {@link #answer}: cùng các bước, nhưng câu trả lời của LLM được đẩy ra từng mẩu.
+     * <p>
+     * Retrieval ({@link #prepare}) chạy <b>đồng bộ</b> trước khi trả Flux: lỗi ở bước này (Ollama tắt → 503) vẫn
+     * thành HTTP status bình thường, vì khi stream đã bắt đầu thì status 200 đã được gửi đi. Không có chunk nào →
+     * chỉ một sự kiện {@code done}, không gọi LLM (BR-QRY-03).
+     * <p>
+     * Khi client ngắt kết nối, Spring MVC hủy subscription → lời gọi Ollama bị hủy theo; câu hỏi vẫn được ghi log.
+     */
+    public Flux<RagStreamEvent> stream(ChatRequest request, List<UUID> documentIds,
+                                       List<ConversationMessage> history) {
+        Prepared p = prepare(request, documentIds, history);
+        if (!p.hasContext()) {
+            return Flux.just(new RagStreamEvent.Done(notFound(p).toResponse()));
+        }
+        List<Document> chunks = p.context().chunks();
+        List<SourceDto> candidates = IntStream.range(0, chunks.size())
+                .mapToObj(i -> sourceMapper.toDto(i + 1, chunks.get(i)))
+                .toList();
+
+        StringBuilder answer = new StringBuilder();
+        AtomicBoolean finished = new AtomicBoolean();
+        long llmStart = System.currentTimeMillis();
+
+        Flux<RagStreamEvent> tokens = prompt(p)
+                .stream()
+                .content()
+                .filter(Objects::nonNull)
+                .doOnNext(answer::append)
+                .map(RagStreamEvent.Token::new);
+
+        Mono<RagStreamEvent> done = Mono.fromCallable(() -> {
+            finished.set(true);
+            long llmMs = System.currentTimeMillis() - llmStart;
+            log.info("LLM (stream): {} context chunks → {} chars answer in {} ms", chunks.size(),
+                    answer.length(), llmMs);
+            return new RagStreamEvent.Done(finish(p, answer.toString().strip(), llmMs).toResponse());
+        });
+
+        return Flux.concat(Mono.just(new RagStreamEvent.Sources(candidates)), tokens, done)
+                .onErrorResume(e -> {
+                    if (finished.compareAndSet(false, true)) {
+                        saveIncomplete(p, llmStart);
+                    }
+                    return Mono.just(new RagStreamEvent.Failed(problemFor(e)));
+                })
+                .doOnCancel(() -> {
+                    if (finished.compareAndSet(false, true)) {
+                        log.info("LLM (stream): cancelled by client after {} chars", answer.length());
+                        saveIncomplete(p, llmStart);
+                    }
+                });
+    }
+
+    /**
+     * Kết quả các bước [2] → [4], dùng chung cho {@link #answer} và {@link #stream}.
+     *
+     * @param context {@code null} khi không có chunk nào vượt ngưỡng hoặc phạm vi rỗng (BR-QRY-03)
+     */
+    record Prepared(ChatRequest request, String question, int topK, List<Document> hits, Double maxScore,
+                    PromptBuilder.BuiltContext context, String history, long retrievalMs, long startMs) {
+
+        boolean hasContext() {
+            return context != null;
+        }
+    }
+
+    Prepared prepare(ChatRequest request, List<UUID> documentIds, List<ConversationMessage> history) {
         long start = System.currentTimeMillis();
         String question = normalize(request.question());                                    // [2]
         int topK = request.topKOrDefault(props.topK());
 
         if (documentIds != null && documentIds.isEmpty()) {
-            long total = System.currentTimeMillis() - start;
-            saveLog(question, request, topK, 0, null, false, 0, null, total);
-            return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
+            return new Prepared(request, question, topK, List.of(), null, null, NO_HISTORY, 0, start);
         }
-        long retrievalStart = System.currentTimeMillis();
         List<Document> hits = retrieve(question, request.topic(), documentIds, topK);       // [3]
         String previousQuestion = hits.isEmpty() ? previousUserQuestion(history) : null;
         if (previousQuestion != null) {
@@ -85,50 +177,50 @@ public class RagService {
             // Chỉ thử khi lần tìm đầu không ra gì, để câu hỏi đổi chủ đề không bị kéo về chủ đề cũ.
             hits = retrieve(previousQuestion + "\n" + question, request.topic(), documentIds, topK);
         }
-        long retrievalMs = System.currentTimeMillis() - retrievalStart;
+        long retrievalMs = System.currentTimeMillis() - start;
         Double maxScore = hits.isEmpty() ? null : hits.getFirst().getScore();
         log.info("Retrieve: topic={} topK={} → {} hits (max score {}) in {} ms",
                 request.topic(), topK, hits.size(), maxScore, retrievalMs);
 
-        if (hits.isEmpty()) {                                                               // BR-QRY-03
-            long total = System.currentTimeMillis() - start;
-            saveLog(question, request, topK, 0, null, false, retrievalMs, null, total);
-            return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
-        }
-
-        PromptBuilder.BuiltContext context = promptBuilder.buildContext(hits, props.maxContextTokens()); // [4]
-
-        long llmStart = System.currentTimeMillis();
-        String answer = callLlm(context.text(), formatHistory(history), question);          // [5]
-        long llmMs = System.currentTimeMillis() - llmStart;
-        log.info("LLM: {} context chunks → {} chars answer in {} ms", context.chunks().size(),
-                answer.length(), llmMs);
-
-        // Phải có ít nhất một trích dẫn hợp lệ; số ngoài khoảng (LLM bịa, hoặc chỉ số mảng như args[0]) bị bỏ qua.
-        List<SourceDto> cited = sourceMapper.toSources(context.chunks(), answer);           // [6]
-        boolean found = !RefusalDetector.isRefusal(answer) && !cited.isEmpty();
-        List<SourceDto> sources = found ? cited : List.of();
-        if (!found) {
-            // Câu trả lời của LLM bị thay bằng "không tìm thấy" — ghi lại để chẩn đoán được (bật DEBUG khi cần).
-            log.debug("Answer discarded (valid citations: {}): {}", cited.size(), answer);
-        }
-
-        long total = System.currentTimeMillis() - start;
-        saveLog(question, request, topK, hits.size(), maxScore, found, retrievalMs, llmMs, total);  // [7]
-        return new RagAnswer(found ? answer : ChatResponse.NOT_FOUND_ANSWER, found, sources, total, true,
-                hits.size());
+        PromptBuilder.BuiltContext context = hits.isEmpty()
+                ? null : promptBuilder.buildContext(hits, props.maxContextTokens());       // [4]
+        return new Prepared(request, question, topK, hits, maxScore, context,
+                hits.isEmpty() ? NO_HISTORY : formatHistory(history), retrievalMs, start);
     }
 
-    private String callLlm(String context, String history, String question) {
+    /** BR-QRY-03: không có chunk nào (hoặc phạm vi rỗng) → trả "không tìm thấy", không gọi LLM. */
+    RagAnswer notFound(Prepared p) {
+        long total = System.currentTimeMillis() - p.startMs();
+        saveLog(p, false, null, total);
+        return new RagAnswer(ChatResponse.NOT_FOUND_ANSWER, false, List.of(), total, false, 0);
+    }
+
+    /** Bước [6] → [7] sau khi đã có câu trả lời đầy đủ của LLM. */
+    RagAnswer finish(Prepared p, String answer, long llmMs) {
+        // Phải có ít nhất một trích dẫn hợp lệ; số ngoài khoảng (LLM bịa, hoặc chỉ số mảng như args[0]) bị bỏ qua.
+        List<SourceDto> cited = sourceMapper.toSources(p.context().chunks(), answer);       // [6]
+        boolean found = !RefusalDetector.isRefusal(answer) && !cited.isEmpty();
+        if (!found) {
+            // API trả "không tìm thấy" thay cho câu này — ghi lại để chẩn đoán được (bật DEBUG khi cần).
+            log.debug("Answer discarded (valid citations: {}): {}", cited.size(), answer);
+        }
+        long total = System.currentTimeMillis() - p.startMs();
+        saveLog(p, found, llmMs, total);                                                     // [7]
+        return new RagAnswer(answer, found, found ? cited : List.of(), total, true, p.hits().size());
+    }
+
+    private ChatClient.ChatClientRequestSpec prompt(Prepared p) {
+        return chatClient.prompt()
+                .system(systemPrompt)
+                .user(u -> u.text(userPrompt)
+                        .param("context", p.context().text())
+                        .param("history", p.history())
+                        .param("question", p.question()));
+    }
+
+    private String callLlm(Prepared p) {
         try {
-            String answer = chatClient.prompt()
-                    .system(systemPrompt)
-                    .user(u -> u.text(userPrompt)
-                            .param("context", context)
-                            .param("history", history)
-                            .param("question", question))
-                    .call()
-                    .content();
+            String answer = prompt(p).call().content();
             return answer == null ? "" : answer.strip();
         } catch (RuntimeException e) {
             if (AiServiceUnavailableException.isConnectivityProblem(e)) {
@@ -174,18 +266,27 @@ public class RagService {
         return null;
     }
 
+    /** Stream bị hủy hoặc lỗi giữa chừng: vẫn ghi log (BR-QRY-07), coi như không có câu trả lời. */
+    private void saveIncomplete(Prepared p, long llmStart) {
+        long now = System.currentTimeMillis();
+        saveLog(p, false, now - llmStart, now - p.startMs());
+    }
+
+    private static ProblemDetail problemFor(Throwable e) {
+        if (AiServiceUnavailableException.isConnectivityProblem(e)) {
+            log.warn("LLM (stream) unavailable: {}", e.getMessage());
+            return new AiServiceUnavailableException(e).getBody();
+        }
+        log.error("LLM (stream) failed", e);
+        return GlobalExceptionHandler.internalError();
+    }
+
     static String normalize(String text) {
         return Normalizer.normalize(text.strip(), Normalizer.Form.NFC);
     }
 
-    private void saveLog(String question, ChatRequest request, int topK, int retrievedCount, Double maxScore,
-                         boolean found, long retrievalMs, Long llmMs, long totalMs) {
-        try {
-            queryLogRepository.save(new QueryLog(question, request.topic(), topK, retrievedCount, maxScore, found,
-                    retrievalMs, llmMs, totalMs));
-        } catch (RuntimeException e) {
-            // Ghi log thất bại không được làm hỏng câu trả lời.
-            log.warn("Could not save query log: {}", e.getMessage());
-        }
+    private void saveLog(Prepared p, boolean found, Long llmMs, long totalMs) {
+        queryLogger.save(new QueryLog(p.question(), p.request().topic(), RagMode.MANUAL, p.topK(), p.hits().size(),
+                p.maxScore(), found, p.retrievalMs(), llmMs, totalMs));
     }
 }

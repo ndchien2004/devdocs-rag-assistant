@@ -14,13 +14,16 @@ Phase 0–6 của đặc tả đã xong. Việc còn lại: "Phase mở rộng" 
 ## Chạy trên máy của chủ repo (Windows 11, RTX 3050 4 GB)
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d   # postgres + ollama (model đã pull sẵn)
-cd backend; $env:DB_PORT="5433"; $env:CHAT_MODEL="qwen2.5:3b"; .\mvnw.cmd spring-boot:run
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --wait   # postgres + ollama (model đã pull sẵn)
+cd backend; .\mvnw.cmd spring-boot:run          # DB_PORT=5433, CHAT_MODEL=qwen2.5:3b lấy từ .env ở thư mục gốc
 cd frontend; npm run dev                                                 # PHẢI là http://localhost:5173
 ```
 
-- **Postgres ở cổng 5433** (5432 bị container khác của chủ repo chiếm — đừng dừng container đó). `.env` chỉ
-  docker compose đọc; Spring Boot đọc biến môi trường, nên phải set `DB_PORT` trong terminal.
+- **Postgres ở cổng 5433** (5432 bị container khác của chủ repo chiếm — đừng dừng container đó). Backend đọc cùng
+  file `.env` ở thư mục gốc với docker compose (`spring.config.import`), nên không cần set `DB_PORT` trong terminal;
+  biến môi trường thật vẫn ghi đè `.env`. Postgres chưa chạy → backend in hướng dẫn ngắn (`DatabaseUnavailableFailureAnalyzer`).
+- Sau khi đổi nhánh, chạy `.\mvnw.cmd clean spring-boot:run`: `target/classes` còn sót migration của nhánh cũ sẽ làm
+  Flyway báo "Found more than one migration with version N".
 - **Chat model trên máy này là `qwen2.5:3b`** (mặc định trong yml là `qwen2.5:7b` — chưa pull, không vừa VRAM).
 - CORS chỉ cho `http://localhost:5173`; Vite để `strictPort: true`. Frontend ở cổng khác / `127.0.0.1` → trình duyệt
   báo "Không kết nối được tới backend" dù backend vẫn chạy.
@@ -54,7 +57,7 @@ Tổ chức theo feature module, không theo tầng.
 | | `RagService` | RAG thủ công: `Retriever` → 0 hit thì trả "không tìm thấy" **không gọi LLM** → `PromptBuilder` → ChatClient → `RefusalDetector` → `SourceMapper` → `query_logs` |
 | | `PromptBuilder` | đánh số `[n] (file — trang)`, cắt theo `max-context-tokens` (JTokkit), gọi `PromptInjectionGuard` |
 | | `SourceMapper` | parse `[1][3]` / `[1, 3]` (bỏ qua code và số ngoài khoảng) → chỉ trả nguồn được trích; không có trích dẫn hợp lệ nào → `RagService` trả "không tìm thấy" |
-| | `ConversationService` | hội thoại đã lưu + phạm vi tài liệu. `ask` = 2 transaction ngắn (đọc lịch sử / ghi tin nhắn có khóa dòng), **không** bọc lời gọi LLM. `RagService` tìm bằng câu hỏi hiện tại trước, chỉ ghép câu hỏi liền trước khi không ra hit; lịch sử trong prompt bị gỡ `[n]` và cắt theo `max-history-tokens` |
+| | `ConversationService` | hội thoại đã lưu + phạm vi tài liệu. `ask` / `askStream` = 2 transaction ngắn (đọc lịch sử / ghi tin nhắn có khóa dòng), **không** bọc lời gọi LLM; `askStream` ghi xong hai tin nhắn rồi mới phát `done`, dừng/lỗi giữa chừng thì không ghi. Tin nhắn trả lời lưu câu đã chuẩn hóa (`RagAnswer.toResponse()`), không phải câu thô của LLM. `RagService` tìm bằng câu hỏi hiện tại trước, chỉ ghép câu hỏi liền trước khi không ra hit; lịch sử trong prompt bị gỡ `[n]` và cắt theo `max-history-tokens` |
 | `evaluation/` | `EvaluationService` | Hit@1/3/5, MRR@K… trên `eval/eval-dataset.json` (30 câu); nhận `VectorStore` bất kỳ |
 | | `ExperimentService` | E1/E4: index vào bảng riêng `exp_<splitter>_<size>_o<overlap>`, không đụng `vector_store` |
 | | `AnswerEvaluationService` | E5: eval mức câu trả lời (gọi LLM thật) |
@@ -75,6 +78,9 @@ collapsed/open/expanded, lưu localStorage), `pages/ChatPage.jsx`, `components/C
 - Controller chỉ nhận request + validate. `ChatClient`, `VectorStore`, `EmbeddingModel` chỉ inject vào service.
 - Prompt nằm trong `resources/prompts/*.st`, không hard-code trong Java. Template dùng `{biến}` — nội dung prompt không được có dấu `{ }` lẻ.
 - Filter vector store dựng bằng `FilterExpressionBuilder` từ enum/UUID — **không bao giờ ghép chuỗi người dùng** (NFR-06).
+- **Migration Flyway: không bao giờ sửa hay đổi số file `V*.sql` đã có trên `main`.** Nhánh mới luôn lấy số kế tiếp
+  của `main` tại thời điểm merge; hai nhánh song song cùng thêm migration thì nhánh merge sau phải đổi số của mình.
+  DB dev đã chạy migration của nhánh chưa merge (số bị đổi sau đó) → xóa volume `pgdata` và tạo lại.
 - Không bỏ `spring.ai.ollama.chat.num-predict` / `spring.http.clients.read-timeout`: qwen2.5:3b từng sinh 38.000+ token, treo request.
 - Đổi embedding model = phải re-index toàn bộ và đổi `spring.ai.vectorstore.pgvector.dimensions`.
 - Không commit tài liệu có bản quyền: tài liệu thật để trong `sample-docs/private/` (đã gitignore). Không commit `.env`.
@@ -113,6 +119,6 @@ collapsed/open/expanded, lưu localStorage), `pages/ChatPage.jsx`, `components/C
 
 ## Việc có thể làm tiếp (Phase mở rộng trong đặc tả)
 
-Streaming SSE (`.stream().content()`), hội thoại nhiều lượt (`MessageChatMemoryAdvisor` + viết lại câu hỏi),
-hybrid search (pgvector + `tsvector`), re-ranking, ingestion bất đồng bộ (`@Async`, 202 + polling),
+Đã xong: streaming SSE (`/chat/stream`, `/conversations/{id}/messages/stream` — `RagService.prepare/finish` dùng chung
+cho call và stream), hội thoại nhiều lượt có lưu. Còn: viết lại câu hỏi nối tiếp bằng LLM, hybrid search (pgvector + `tsvector`), re-ranking, ingestion bất đồng bộ (`@Async`, 202 + polling),
 LLM-as-a-Judge, observability (Micrometer/Actuator), thử `qwen2.5:7b` hoặc model qua API và đo lại E5.

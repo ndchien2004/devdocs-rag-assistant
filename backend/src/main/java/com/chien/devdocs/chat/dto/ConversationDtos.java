@@ -3,6 +3,8 @@ package com.chien.devdocs.chat.dto;
 import com.chien.devdocs.chat.Conversation;
 import com.chien.devdocs.chat.ConversationMessage;
 import com.chien.devdocs.common.Topic;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -16,7 +18,10 @@ public final class ConversationDtos {
     public record CreateRequest(Set<UUID> documentIds) {}
     public record RenameRequest(@NotBlank @Size(max = 160) String title) {}
     public record ScopeRequest(Set<UUID> documentIds) {}
-    public record AskRequest(@NotBlank @Size(max = 1000) String question, Topic topic) {}
+    /** @param topK bỏ trống = {@code app.rag.top-k} */
+    public record AskRequest(@NotBlank @Size(max = 1000) String question, Topic topic, @Min(1) @Max(10) Integer topK) {
+        public AskRequest(String question, Topic topic) { this(question, topic, null); }
+    }
     public record Message(UUID id, String role, String content, Boolean found, List<SourceDto> sources, Instant createdAt) {
         public static Message from(ConversationMessage m) {
             return new Message(m.getId(), m.getRole(), m.getContent(), m.getFound(), m.getSources(), m.getCreatedAt());

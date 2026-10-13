@@ -181,18 +181,56 @@ class RagFlowIntegrationTest {
         assertThat(chatModel.calls()).isZero();
     }
 
+    private String stream(Map<String, Object> body) {
+        return client.post().uri("/api/v1/chat/stream").contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM).body(body).exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM)
+                .returnResult(String.class).getResponseBody();
+    }
+
     @Test
     @Order(6)
+    void streamingSendsSourcesThenTokensThenDone() {
+        String body = stream(Map.of("question", "Propagation REQUIRES_NEW và REQUIRED khác nhau thế nào?"));
+
+        int sources = body.indexOf("event:sources");
+        int firstToken = body.indexOf("event:token");
+        int done = body.indexOf("event:done");
+        assertThat(sources).isNotNegative();
+        assertThat(firstToken).isGreaterThan(sources);
+        assertThat(done).isGreaterThan(firstToken);
+        assertThat(body.split("event:token", -1).length - 1).as("one event per token").isGreaterThan(1);
+        assertThat(body.substring(done)).contains("\"found\":true", "\"fileName\":\"02_Spring.md\"");
+        assertThat(chatModel.calls()).isEqualTo(1);
+    }
+
+    @Test
+    @Order(7)
+    void streamingAnUnrelatedQuestionSendsOnlyDoneWithoutCallingLlm() {
+        String body = stream(Map.of("question", "Thời tiết Hà Nội hôm nay thế nào?"));
+
+        assertThat(body).contains("event:done", "\"found\":false").doesNotContain("event:token", "event:sources");
+        assertThat(chatModel.calls()).isZero();
+    }
+
+    @Test
+    @Order(8)
     void everyQuestionIsLogged() {                                            // BR-QRY-07
         Integer logs = jdbc.queryForObject("select count(*) from query_logs", Integer.class);
         Integer notFound = jdbc.queryForObject("select count(*) from query_logs where found = false", Integer.class);
 
         assertThat(logs).isGreaterThanOrEqualTo(3);
         assertThat(notFound).isGreaterThanOrEqualTo(2);
+
+        chat(Map.of("question", "Propagation REQUIRES_NEW là gì?", "mode", "RAG_ADVISOR"));
+        Integer advisorLogs = jdbc.queryForObject(
+                "select count(*) from query_logs where mode = 'RAG_ADVISOR' and retrieval_ms is null", Integer.class);
+        assertThat(advisorLogs).isEqualTo(1);
     }
 
     @Test
-    @Order(7)
+    @Order(9)
     void chunkingExperimentIndexesIntoASeparateTable() {                      // Phase 4, E1
         JsonNode report = client.post().uri("/api/v1/evaluation/experiments/chunking")
                 .contentType(MediaType.APPLICATION_JSON).body(Map.of("chunkSize", 60))
@@ -207,10 +245,19 @@ class RagFlowIntegrationTest {
                 "select count(*) from exp_token_60_o0 where metadata->>'document_id' <> ?", Integer.class, documentId);
         assertThat(foreignRows).isZero();
         assertThat(chunkCount(documentId)).as("main vector_store untouched").isPositive();
+
+        JsonNode dropped = client.delete().uri("/api/v1/evaluation/experiments").exchange()
+                .expectStatus().isOk()
+                .returnResult(JsonNode.class).getResponseBody();
+        assertThat(dropped.get("dropped").toString()).contains("exp_token_60_o0");
+        Integer tables = jdbc.queryForObject(
+                "select count(*) from information_schema.tables where table_name = 'exp_token_60_o0'", Integer.class);
+        assertThat(tables).isZero();
+        assertThat(chunkCount(documentId)).as("main vector_store untouched").isPositive();
     }
 
     @Test
-    @Order(8)
+    @Order(10)
     void conversationPersistsMessagesAndScopeAndSupportsFollowUps() {
         String isolatedText = "# POLYCARBONATE VECTOR ISOLATION\n\nPOLYCARBONATE VECTOR ISOLATION uses the ZEBRACOLOR material identifier exclusively.";
         JsonNode otherDoc = upload("isolation.md", isolatedText, "REACT")
@@ -264,7 +311,33 @@ class RagFlowIntegrationTest {
     }
 
     @Test
-    @Order(9)
+    @Order(11)
+    void conversationStreamingSavesBothMessagesBeforeDone() {
+        String id = client.post().uri("/api/v1/conversations")
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("documentIds", List.of(documentId))).exchange()
+                .expectStatus().isCreated().returnResult(JsonNode.class).getResponseBody().get("id").asString();
+
+        String body = client.post().uri("/api/v1/conversations/{id}/messages/stream", id)
+                .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
+                .body(Map.of("question", "Propagation REQUIRES_NEW và REQUIRED khác nhau thế nào?")).exchange()
+                .expectStatus().isOk()
+                .returnResult(String.class).getResponseBody();
+
+        assertThat(body).contains("event:sources", "event:token", "event:done", "\"found\":true");
+        client.get().uri("/api/v1/conversations/{id}", id).exchange().expectStatus().isOk().expectBody()
+                .jsonPath("$.messages.length()").isEqualTo(2)
+                .jsonPath("$.messages[1].found").isEqualTo(true)
+                .jsonPath("$.messages[1].sources[0].documentId").isEqualTo(documentId);
+        // Hội thoại không tồn tại → 404 thường, chưa mở stream.
+        client.post().uri("/api/v1/conversations/{id}/messages/stream", java.util.UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON).body(Map.of("question", "x")).exchange()
+                .expectStatus().isNotFound();
+
+        client.delete().uri("/api/v1/conversations/{id}", id).exchange().expectStatus().isNoContent();
+    }
+
+    @Test
+    @Order(12)
     void concurrentQuestionsInOneConversationAreAllPersistedInOrder() {
         String id = client.post().uri("/api/v1/conversations")
                 .contentType(MediaType.APPLICATION_JSON).body(Map.of("documentIds", List.of(documentId))).exchange()
@@ -293,7 +366,7 @@ class RagFlowIntegrationTest {
     }
 
     @Test
-    @Order(10)
+    @Order(13)
     void reindexDoesNotDuplicateChunks() {                                    // TC-ING-07
         int before = chunkCount(documentId);
 
@@ -303,7 +376,7 @@ class RagFlowIntegrationTest {
     }
 
     @Test
-    @Order(11)
+    @Order(14)
     void deleteRemovesAllChunks() {                                           // TC-ING-06
         client.delete().uri("/api/v1/documents/{id}", documentId).exchange().expectStatus().isNoContent();
 

@@ -1,3 +1,5 @@
+import { readSse } from './sse.js'
+
 const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(/\/$/, '')
 
 /** Lỗi từ backend (RFC 9457 Problem Details) hoặc lỗi mạng, đã chuyển thành thông điệp thân thiện. */
@@ -9,23 +11,63 @@ export class ApiError extends Error {
   }
 }
 
+const networkError = () =>
+  new ApiError('Không kết nối được tới backend. Kiểm tra Spring Boot đã chạy ở ' + API_URL + '.', 0)
+
+const problemError = (problem, status) =>
+  new ApiError(problem?.detail ?? problem?.title ?? `Lỗi ${status}`, status, problem)
+
+async function readJson(response) {
+  const isJson = (response.headers.get('Content-Type') ?? '').includes('json')
+  return isJson ? response.json() : null
+}
+
 async function request(path, options = {}) {
   let response
   try {
     response = await fetch(`${API_URL}${path}`, options)
   } catch {
-    throw new ApiError('Không kết nối được tới backend. Kiểm tra Spring Boot đã chạy ở ' + API_URL + '.', 0)
+    throw networkError()
   }
   if (response.status === 204) return null
 
-  const isJson = (response.headers.get('Content-Type') ?? '').includes('json')
-  const body = isJson ? await response.json() : null
-  if (!response.ok) {
-    const message = body?.detail ?? body?.title ?? `Lỗi ${response.status}`
-    throw new ApiError(message, response.status, body)
-  }
+  const body = await readJson(response)
+  if (!response.ok) throw problemError(body, response.status)
   return body
 }
+
+/**
+ * POST rồi đọc Server-Sent Events: gọi onSources(nguồn ứng viên) rồi onToken(text) cho từng mẩu, trả về kết quả cuối
+ * (sự kiện done). Hủy bằng signal → ném AbortError và backend dừng gọi LLM.
+ */
+async function postStream(path, body, { signal, onSources, onToken } = {}) {
+  let response
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch (err) {
+    if (err.name === 'AbortError') throw err
+    throw networkError()
+  }
+  // Lỗi trước khi stream bắt đầu (400, 404, 503) vẫn là HTTP status + Problem Details như request thường.
+  if (!response.ok) throw problemError(await readJson(response), response.status)
+
+  for await (const { event, data } of readSse(response.body)) {
+    if (event === 'sources') onSources?.(data)
+    else if (event === 'token') onToken?.(data.text)
+    else if (event === 'done') return data
+    else if (event === 'error') throw problemError(data, data.status)
+  }
+  throw new ApiError('Kết nối bị ngắt trước khi nhận đủ câu trả lời.', 0)
+}
+
+/** Hỏi đáp một lượt dạng streaming (chỉ mode MANUAL). */
+const chatStream = ({ question, topic, topK, ...handlers }) =>
+  postStream('/api/v1/chat/stream', { question, topic: topic || null, topK: topK || null }, handlers)
 
 const json = (method, body) => ({
   method,
@@ -34,8 +76,11 @@ const json = (method, body) => ({
 })
 
 export const api = {
-  chat: ({ question, topic, topK }) =>
-    request('/api/v1/chat', json('POST', { question, topic: topic || null, topK: topK || null })),
+  chatStream,
+
+  /** topic / topK / mode bỏ trống = để backend dùng mặc định (mọi chủ đề, app.rag.top-k, MANUAL). */
+  chat: ({ question, topic, topK, mode }) =>
+    request('/api/v1/chat', json('POST', { question, topic: topic || null, topK: topK || null, mode: mode || null })),
 
   listDocuments: ({ topic, status } = {}) => {
     const params = new URLSearchParams()
@@ -62,6 +107,10 @@ export const api = {
   renameConversation: (id, title) => request(`/api/v1/conversations/${id}`, json('PATCH', { title })),
   setConversationScope: (id, documentIds) => request(`/api/v1/conversations/${id}/scope`, json('PUT', { documentIds })),
   deleteConversation: (id) => request(`/api/v1/conversations/${id}`, { method: 'DELETE' }),
+  /** Hỏi trong hội thoại dạng streaming; backend lưu xong hai tin nhắn rồi mới gửi done. */
+  askConversationStream: (id, { question, topic, topK, ...handlers }) =>
+    postStream(`/api/v1/conversations/${id}/messages/stream`,
+      { question, topic: topic || null, topK: topK || null }, handlers),
   askConversation: (id, question, topic) =>
     request(`/api/v1/conversations/${id}/messages`, json('POST', { question, topic: topic || null })),
   pdfUrl: (id) => `${API_URL}/api/v1/documents/${id}/content`,

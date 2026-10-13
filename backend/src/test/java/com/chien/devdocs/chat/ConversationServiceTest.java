@@ -1,6 +1,7 @@
 package com.chien.devdocs.chat;
 
 import com.chien.devdocs.chat.dto.ChatRequest;
+import com.chien.devdocs.chat.dto.ChatResponse;
 import com.chien.devdocs.chat.dto.ConversationDtos;
 import com.chien.devdocs.chat.dto.SourceDto;
 import com.chien.devdocs.common.Topic;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 import java.net.ConnectException;
 import java.util.List;
@@ -157,5 +160,84 @@ class ConversationServiceTest {
         when(conversations.findById(conversation.getId())).thenReturn(Optional.of(conversation));
         ConversationDtos.Response response = service.setScope(conversation.getId(), Set.of());
         assertThat(response.documentIds()).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ streaming
+
+    private Conversation conversationInScope() {
+        Conversation conversation = new Conversation(Set.of(indexed.getId()));
+        when(conversations.findById(conversation.getId())).thenReturn(Optional.of(conversation));
+        when(conversations.findWithLockById(conversation.getId())).thenReturn(Optional.of(conversation));
+        return conversation;
+    }
+
+    @Test
+    void streamingSavesBothMessagesBeforeEmittingDone() {
+        Conversation conversation = conversationInScope();
+        SourceDto source = new SourceDto(1, indexed.getId().toString(), "a.pdf", 4, null, "snippet", .9);
+        when(rag.stream(any(ChatRequest.class), any(), any())).thenReturn(Flux.just(
+                new RagStreamEvent.Sources(List.of(source)),
+                new RagStreamEvent.Token("Có [1]."),
+                new RagStreamEvent.Done(new ChatResponse("Có [1].", true, List.of(source), 5))));
+
+        StepVerifier.create(service.askStream(conversation.getId(),
+                        new ConversationDtos.AskRequest("Hỏi gì?", null, 3)))
+                .expectNextCount(2)
+                // Tới lúc phát done, hai tin nhắn đã nằm trong hội thoại.
+                .assertNext(e -> assertThat(conversation.getMessages()).hasSize(2))
+                .verifyComplete();
+
+        assertThat(conversation.getMessages()).extracting(ConversationMessage::getRole).containsExactly("USER", "ASSISTANT");
+        assertThat(conversation.getMessages().get(1).getSources()).containsExactly(source);
+        ArgumentCaptor<ChatRequest> request = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(rag).stream(request.capture(), eq(List.of(indexed.getId())), any());
+        assertThat(request.getValue().topK()).isEqualTo(3);
+    }
+
+    @Test
+    void streamThatFailsMidAnswerSavesNothing() {
+        Conversation conversation = conversationInScope();
+        when(rag.stream(any(ChatRequest.class), any(), any())).thenReturn(Flux.just(
+                new RagStreamEvent.Token("Đang"),
+                new RagStreamEvent.Failed(new AiServiceUnavailableException(new ConnectException("x")).getBody())));
+
+        StepVerifier.create(service.askStream(conversation.getId(), new ConversationDtos.AskRequest("Hỏi", null)))
+                .expectNextCount(2)
+                .verifyComplete();
+
+        assertThat(conversation.getMessages()).isEmpty();
+        verify(conversations, never()).save(any());
+    }
+
+    @Test
+    void conversationDeletedWhileStreamingEndsWithA404ErrorEvent() {
+        Conversation conversation = conversationInScope();
+        when(conversations.findWithLockById(conversation.getId())).thenReturn(Optional.empty());
+        when(rag.stream(any(ChatRequest.class), any(), any())).thenReturn(Flux.just(
+                new RagStreamEvent.Done(new ChatResponse("Có [1].", true, List.of(), 5))));
+
+        StepVerifier.create(service.askStream(conversation.getId(), new ConversationDtos.AskRequest("Hỏi", null)))
+                .assertNext(e -> assertThat(((RagStreamEvent.Failed) e).problem().getStatus()).isEqualTo(404))
+                .verifyComplete();
+    }
+
+    @Test
+    void streamingUnknownConversationFailsBeforeAnyStreamStarts() {
+        UUID missing = UUID.randomUUID();
+        when(conversations.findById(missing)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.askStream(missing, new ConversationDtos.AskRequest("Hỏi", null)))
+                .isInstanceOf(ConversationNotFoundException.class);
+    }
+
+    @Test
+    void refusalIsStoredAsTheStandardNotFoundAnswerNotTheModelsRawText() {
+        Conversation conversation = conversationInScope();
+        when(rag.answer(any(ChatRequest.class), any(), any())).thenReturn(
+                new RagAnswer("I can't answer that.", false, List.of(), 10, true, 1));
+
+        service.ask(conversation.getId(), new ConversationDtos.AskRequest("Hỏi", null));
+
+        assertThat(conversation.getMessages().get(1).getContent()).isEqualTo(ChatResponse.NOT_FOUND_ANSWER);
     }
 }

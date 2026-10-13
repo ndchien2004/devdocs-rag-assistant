@@ -69,9 +69,11 @@ async function typeSlowly(page, selector, text, recorder) {
   }
 }
 
+/** Chờ thêm một câu trả lời đã stream xong (hoặc một lỗi) — bỏ qua câu đang stream dở. */
 async function waitForNewAnswer(page, countBefore) {
   await page.waitForFunction(
-    (n) => document.querySelectorAll('[data-role="assistant"], [data-role="error"]').length > n,
+    (n) =>
+      document.querySelectorAll('[data-role="assistant"]:not([data-streaming]), [data-role="error"]').length > n,
     { timeout: 120_000 },
     countBefore,
   )

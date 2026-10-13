@@ -10,6 +10,7 @@ import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import reactor.core.publisher.Flux;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -86,6 +87,17 @@ public final class FakeAiModels {
             calls.incrementAndGet();
             lastPrompt = prompt;
             return new ChatResponse(List.of(new Generation(new AssistantMessage(answer))));
+        }
+
+        /** Trả cùng câu trả lời, cắt thành từng từ (giữ dấu cách đầu) như token của LLM thật. */
+        @Override
+        public Flux<ChatResponse> stream(Prompt prompt) {
+            return Flux.defer(() -> {
+                calls.incrementAndGet();
+                lastPrompt = prompt;
+                return Flux.fromArray(answer.split("(?=\\s)"))
+                        .map(token -> new ChatResponse(List.of(new Generation(new AssistantMessage(token)))));
+            });
         }
 
         public int calls() {

@@ -97,3 +97,20 @@ body {
 .thinking-dot {
   animation: pulse-dot 1.2s infinite ease-in-out;
 }
+
+/* Con trỏ nhấp nháy ở cuối câu trả lời đang stream */
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.markdown.streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 0.15em;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--color-accent);
+  animation: caret-blink 1s steps(1) infinite;
+}

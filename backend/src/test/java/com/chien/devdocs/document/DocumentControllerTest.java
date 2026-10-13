@@ -103,9 +103,11 @@ class DocumentControllerTest {
         Path pdf = tempDir.resolve("stored.pdf");
         byte[] bytes = "%PDF-1.4 test".getBytes();
         Files.write(pdf, bytes);
+        // storage_path trong DB là tương đối; đường dẫn thật do IngestionService.filePath (FileStorage.resolve) trả.
         SourceDocument doc = new SourceDocument(id, "stored.pdf", "application/pdf", bytes.length, "c",
-                Topic.JAVA, pdf.toString());
+                Topic.JAVA, "stored.pdf");
         when(ingestionService.get(id)).thenReturn(doc);
+        when(ingestionService.filePath(doc)).thenReturn(pdf);
 
         mvc.perform(get("/api/v1/documents/{id}/content", id))
                 .andExpect(status().isOk())
