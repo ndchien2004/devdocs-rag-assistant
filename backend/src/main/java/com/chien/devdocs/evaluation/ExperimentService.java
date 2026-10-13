@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Phase 4 — thí nghiệm cắt chunk (E1: chunk size, E4: overlap).
@@ -29,6 +30,8 @@ import java.util.List;
 public class ExperimentService {
 
     private static final Logger log = LoggerFactory.getLogger(ExperimentService.class);
+    /** Tên bảng do {@link #runChunking} tạo: {@code exp_<strategy>_<size>_o<overlap>}. */
+    static final Pattern EXPERIMENT_TABLE = Pattern.compile("exp_(token|window)_\\d+_o\\d+");
 
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingModel embeddingModel;
@@ -77,5 +80,29 @@ public class ExperimentService {
 
         String label = "%s chunk=%d overlap=%d (%d chunks)".formatted(strategy, chunkSize, chunkOverlap, chunks.size());
         return evaluationService.run(request, store, label);
+    }
+
+    /**
+     * Xóa mọi bảng thí nghiệm {@code exp_*} trong schema hiện tại. Bảng được giữ lại sau mỗi lần chạy để soi bằng SQL,
+     * nên cần cách dọn riêng.
+     * <p>
+     * Chỉ xóa bảng có tên đúng mẫu {@link #EXPERIMENT_TABLE} — không bao giờ đụng tới bảng khác tình cờ bắt đầu bằng "exp".
+     *
+     * @return tên các bảng đã xóa
+     */
+    public List<String> dropExperimentTables() {
+        List<String> tables = jdbcTemplate.queryForList("""
+                select table_name from information_schema.tables
+                where table_schema = current_schema() and table_name like 'exp\\_%'
+                order by table_name""", String.class);
+        List<String> dropped = new ArrayList<>();
+        for (String table : tables) {
+            if (EXPERIMENT_TABLE.matcher(table).matches()) {
+                jdbcTemplate.execute("DROP TABLE IF EXISTS \"" + table + "\"");
+                dropped.add(table);
+            }
+        }
+        log.info("Dropped {} experiment tables: {}", dropped.size(), dropped);
+        return dropped;
     }
 }

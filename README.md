@@ -133,6 +133,7 @@ curl -X POST http://localhost:8080/api/v1/evaluation/run -H "Content-Type: appli
 curl -X POST http://localhost:8080/api/v1/evaluation/experiments/chunking -H "Content-Type: application/json" \
      -d '{"chunkSize": 300, "chunkOverlap": 60, "strategy": "WINDOW"}'
 curl -X POST "http://localhost:8080/api/v1/evaluation/answers?mode=RAG_ADVISOR"   # gọi LLM thật, vài phút
+curl -X DELETE http://localhost:8080/api/v1/evaluation/experiments                # xóa mọi bảng exp_* của thí nghiệm
 ```
 
 # Kết quả theo từng phase
@@ -235,6 +236,7 @@ Báo cáo đầy đủ từng câu: [`docs/eval/phase3-baseline.json`](docs/eval
 Mỗi thí nghiệm chỉ đổi **một** tham số so với baseline (chunk 500, K = 5, θ = 0.5). Chạy lại toàn bộ:
 `./scripts/run-experiments.sh` — báo cáo JSON từng lần chạy nằm trong [`docs/eval/phase4/`](docs/eval/phase4).
 E1/E4 index lại tài liệu vào bảng vector **riêng** (`exp_<splitter>_<size>_o<overlap>`), không đụng dữ liệu chính.
+Các bảng này được giữ lại để soi bằng SQL; dọn tất cả bằng `curl -X DELETE http://localhost:8080/api/v1/evaluation/experiments`.
 
 > ⚠️ Bộ eval có 25 câu trong phạm vi → **1 câu = 4 điểm %**. Chênh lệch dưới ~8 điểm nên coi là nhiễu.
 

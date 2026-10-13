@@ -208,6 +208,15 @@ class RagFlowIntegrationTest {
                 "select count(*) from exp_token_60_o0 where metadata->>'document_id' <> ?", Integer.class, documentId);
         assertThat(foreignRows).isZero();
         assertThat(chunkCount(documentId)).as("main vector_store untouched").isPositive();
+
+        JsonNode dropped = client.delete().uri("/api/v1/evaluation/experiments").exchange()
+                .expectStatus().isOk()
+                .returnResult(JsonNode.class).getResponseBody();
+        assertThat(dropped.get("dropped").toString()).contains("exp_token_60_o0");
+        Integer tables = jdbc.queryForObject(
+                "select count(*) from information_schema.tables where table_name = 'exp_token_60_o0'", Integer.class);
+        assertThat(tables).isZero();
+        assertThat(chunkCount(documentId)).as("main vector_store untouched").isPositive();
     }
 
     @Test
