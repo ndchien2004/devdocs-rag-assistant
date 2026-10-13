@@ -38,9 +38,9 @@ export default function AdvancedOptions({ value, onChange, showMode = true }) {
         aria-haspopup="dialog"
         aria-label="Tùy chọn nâng cao"
         title="Tùy chọn nâng cao"
-        className={`relative grid h-[30px] w-[30px] place-items-center rounded-lg border transition hover:border-line-strong ${
-          open || changed ? 'border-accent/40 text-accent' : 'border-line text-ink-soft'
-        } bg-white`}
+        className={`chip relative grid h-[30px] w-[30px] place-items-center ${
+          open || changed ? '!border-accent/40 text-accent' : 'text-ink-soft'
+        }`}
       >
         <SlidersIcon className="h-4 w-4" />
         {changed && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-accent" />}
@@ -50,14 +50,14 @@ export default function AdvancedOptions({ value, onChange, showMode = true }) {
         <div
           role="dialog"
           aria-label="Tùy chọn nâng cao"
-          className="absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-line-strong bg-white p-3.5 shadow-[0_8px_28px_rgba(31,30,29,0.12)]"
+          className="glass-strong absolute bottom-full left-0 z-30 mb-3 w-72 rounded-3xl p-4"
         >
           <label className="flex items-center justify-between gap-3 text-xs font-medium text-ink-soft">
             Số đoạn tìm kiếm (top-K)
             <select
               value={value.topK}
               onChange={(e) => onChange({ ...value, topK: e.target.value })}
-              className="cursor-pointer rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
+              className="cursor-pointer rounded-full border border-line bg-white/80 px-3 py-1 text-xs text-ink focus:border-accent focus:outline-none"
             >
               <option value="">Mặc định</option>
               {Array.from({ length: TOP_K_MAX }, (_, i) => i + 1).map((k) => (
@@ -75,8 +75,8 @@ export default function AdvancedOptions({ value, onChange, showMode = true }) {
               {RAG_MODES.map((m) => (
                 <label
                   key={m.value}
-                  className={`flex cursor-pointer gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-panel ${
-                    value.mode === m.value ? 'bg-panel' : ''
+                  className={`flex cursor-pointer gap-2.5 rounded-2xl px-2.5 py-2 transition hover:bg-hover ${
+                    value.mode === m.value ? 'bg-accent-soft/70' : ''
                   }`}
                 >
                   <input
@@ -101,7 +101,7 @@ export default function AdvancedOptions({ value, onChange, showMode = true }) {
             <button
               type="button"
               onClick={() => onChange(DEFAULT_CHAT_OPTIONS)}
-              className="mt-2.5 text-xs text-accent hover:underline"
+              className="mt-3 text-xs font-medium text-accent-strong hover:underline"
             >
               Khôi phục mặc định
             </button>

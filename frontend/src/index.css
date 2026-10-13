@@ -125,7 +125,8 @@ body {
 }
 
 /* Vòng focus thống nhất khi điều hướng bằng bàn phím. */
-:where(button, a, select, input, textarea, summary):focus-visible {
+/* textarea của khung nhập có quầng sáng riêng (focus-within trên khung) → không vẽ thêm khung chữ nhật. */
+:where(button, a, select, input, summary):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
