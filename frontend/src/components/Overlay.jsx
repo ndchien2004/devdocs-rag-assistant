@@ -12,7 +12,7 @@ export function Portal({ children }) {
 export function LoadingOverlay({ children }) {
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/30 text-sm text-white backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 grid place-items-center bg-white/40 text-sm text-ink backdrop-blur-md">
         {children}
       </div>
     </Portal>

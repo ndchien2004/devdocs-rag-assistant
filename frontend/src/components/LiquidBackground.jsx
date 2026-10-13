@@ -1,9 +1,9 @@
-/** Nền "lỏng" phía sau các lớp kính: vài đốm màu trôi rất chậm (đứng yên khi bật giảm chuyển động). */
+/** Nền "lỏng" phía sau các lớp kính: vài vệt xám bạc rất mờ trôi chậm — nền vẫn trắng, nhưng kính có thứ để khúc xạ (đứng yên khi bật giảm chuyển động). */
 const BLOBS = [
-  { color: 'rgb(34 211 238 / 0.32)', top: '-22vmax', left: '-14vmax', drift: '62s', dx: '10vw', dy: '8vh' },
-  { color: 'rgb(14 165 233 / 0.24)', top: '-10vmax', left: '48vw', drift: '74s', dx: '-12vw', dy: '10vh' },
-  { color: 'rgb(167 139 250 / 0.2)', top: '46vh', left: '58vw', drift: '68s', dx: '-8vw', dy: '-10vh' },
-  { color: 'rgb(125 211 252 / 0.26)', top: '52vh', left: '-18vmax', drift: '80s', dx: '12vw', dy: '-6vh' },
+  { color: 'rgb(148 163 184 / 0.16)', top: '-24vmax', left: '-16vmax', drift: '62s', dx: '10vw', dy: '8vh' },
+  { color: 'rgb(203 213 225 / 0.22)', top: '-12vmax', left: '50vw', drift: '74s', dx: '-12vw', dy: '10vh' },
+  { color: 'rgb(148 163 184 / 0.12)', top: '48vh', left: '56vw', drift: '68s', dx: '-8vw', dy: '-10vh' },
+  { color: 'rgb(226 232 240 / 0.5)', top: '50vh', left: '-18vmax', drift: '80s', dx: '12vw', dy: '-6vh' },
 ]
 
 export default function LiquidBackground() {

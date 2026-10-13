@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
-/* Liquid glass: nền trắng lạnh, panel kính mờ, nhấn cyan. Màu đi qua token theo vai trò → component không cần biết mã màu. */
+/* Liquid glass: nền trắng tinh, panel kính trong có viền phản quang, nhấn cyan. Màu đi qua token theo vai trò → component không cần biết mã màu. */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
 
-  --color-canvas: #f5f9fc;
-  --color-panel: rgb(255 255 255 / 0.6);
-  --color-hover: rgb(14 165 233 / 0.08);
-  --color-bubble: rgb(8 145 178 / 0.1);
+  --color-canvas: #fbfbfc;
+  --color-panel: rgb(255 255 255 / 0.4);
+  --color-hover: rgb(15 23 42 / 0.045);
+  --color-bubble: rgb(15 23 42 / 0.045);
   --color-line: rgb(15 23 42 / 0.08);
   --color-line-strong: rgb(15 23 42 / 0.14);
   --color-ink: #0f172a;
@@ -38,12 +38,16 @@ body {
 @utility glass {
   position: relative;
   isolation: isolate;
-  background: rgb(255 255 255 / 0.55);
-  border: 1px solid rgb(255 255 255 / 0.7);
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.22));
+  border: 1px solid rgb(255 255 255 / 0.85);
+  /* Viền phản quang: cạnh trên sáng, cạnh dưới tối nhẹ + đường viền mảnh để kính tách khỏi nền trắng. */
   box-shadow:
-    0 8px 32px rgb(15 23 42 / 0.08),
-    inset 0 1px 0 rgb(255 255 255 / 0.9),
-    inset 0 -1px 0 rgb(255 255 255 / 0.3);
+    0 0 0 0.5px rgb(15 23 42 / 0.07),
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 16px 48px -12px rgb(15 23 42 / 0.12),
+    inset 0 1px 1px rgb(255 255 255 / 1),
+    inset 0 -1px 1px rgb(15 23 42 / 0.04),
+    inset 0 0 24px rgb(255 255 255 / 0.35);
   &::after {
     content: "";
     position: absolute;
@@ -51,27 +55,34 @@ body {
     z-index: -2;
     border-radius: inherit;
     pointer-events: none;
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%) brightness(1.04);
+    backdrop-filter: blur(20px) saturate(160%) brightness(1.04);
   }
 }
 
 /* Thẻ nhỏ: bong bóng chat, thẻ câu trả lời, pill nguồn. */
 @utility glass-thin {
-  background: rgb(255 255 255 / 0.5);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
-  backdrop-filter: blur(12px) saturate(160%);
-  border: 1px solid rgb(255 255 255 / 0.65);
-  box-shadow: 0 2px 12px rgb(15 23 42 / 0.05), inset 0 1px 0 rgb(255 255 255 / 0.85);
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.3));
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow:
+    0 0 0 0.5px rgb(15 23 42 / 0.06),
+    0 8px 24px -10px rgb(15 23 42 / 0.1),
+    inset 0 1px 1px rgb(255 255 255 / 1),
+    inset 0 -1px 1px rgb(15 23 42 / 0.03);
 }
 
 /* Popup / dialog cần đọc rõ. */
 @utility glass-strong {
-  background: rgb(255 255 255 / 0.86);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgb(255 255 255 / 0.8);
-  box-shadow: 0 24px 64px rgb(15 23 42 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.95);
+  background: rgb(255 255 255 / 0.72);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  backdrop-filter: blur(32px) saturate(160%);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow:
+    0 0 0 0.5px rgb(15 23 42 / 0.08),
+    0 24px 64px -16px rgb(15 23 42 / 0.22),
+    inset 0 1px 1px rgb(255 255 255 / 1);
 }
 
 /* Vệt phản quang chéo góc trên-trái — bề mặt cong như giọt nước. Phần tử cần position khác static. */
@@ -118,11 +129,11 @@ body {
 /* Nút / ô chọn phụ dạng viên kính. */
 @utility chip {
   border-radius: 9999px;
-  background: rgb(255 255 255 / 0.55);
+  background: rgb(255 255 255 / 0.45);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  border: 1px solid rgb(255 255 255 / 0.75);
-  box-shadow: 0 1px 6px rgb(15 23 42 / 0.05), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 0 0 0.5px rgb(15 23 42 / 0.08), 0 2px 8px -2px rgb(15 23 42 / 0.08), inset 0 1px 1px rgb(255 255 255 / 1);
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
   &:hover:not(:disabled) {
     border-color: rgb(8 145 178 / 0.35);
@@ -151,7 +162,7 @@ body {
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
-  background: linear-gradient(160deg, #f8fbfe 0%, #eef6fb 55%, #f4f3fd 100%);
+  background: #fbfbfc;
 }
 /* Đốm màu vẽ bằng radial-gradient rìa trong suốt (không dùng filter: blur — rất tốn GPU), trôi bằng transform. */
 .liquid-blob {
@@ -165,7 +176,7 @@ body {
 .liquid-noise {
   position: absolute;
   inset: 0;
-  opacity: 0.035;
+  opacity: 0.02;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 @keyframes liquid-drift {

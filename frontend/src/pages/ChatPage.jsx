@@ -167,7 +167,7 @@ export default function ChatPage({ conversation, messages, indexedCount, docsLoa
     <ChatHeader title={conversation.title}>{scope}{newChat}</ChatHeader>
     <div className="min-h-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-3xl space-y-6 px-4 pt-6 pb-8">
       {allMessages.map((m) => m.role === 'user'
-        ? <div key={m.id} className="flex justify-end"><div className="bg-bubble max-w-[85%] rounded-3xl rounded-br-lg border border-white/70 bg-gradient-to-br from-cyan-50/90 to-sky-100/80 px-4.5 py-2.5 leading-relaxed whitespace-pre-wrap text-ink shadow-[0_2px_12px_rgba(8,145,178,0.10),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md">{m.text}</div></div>
+        ? <div key={m.id} className="flex justify-end"><div className="bg-bubble max-w-[85%] rounded-3xl rounded-br-lg border border-white/80 px-4.5 py-2.5 leading-relaxed whitespace-pre-wrap text-ink shadow-[0_0_0_0.5px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md">{m.text}</div></div>
         : m.role === 'error' ? <div key={m.id} className="rounded-2xl border border-danger/20 bg-rose-50/80 px-4 py-3 text-sm text-danger backdrop-blur-md">{m.text}</div>
           : <Suspense key={m.id} fallback={<div role="status" className="text-sm text-muted">Đang tải câu trả lời…</div>}><AnswerMessage message={m} onOpenPdf={onOpenPdf} availableDocumentIds={documents.map((d) => d.id)} /></Suspense>)}
       {sending && !streamingAnswer && <Thinking />}{localError && <p role="alert" className="rounded-2xl border border-danger/20 bg-rose-50/80 px-4 py-3 text-sm text-danger backdrop-blur-md">{localError}</p>}{error && <p role="alert" className="text-sm text-danger">{error}</p>}

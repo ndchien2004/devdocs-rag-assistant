@@ -39,7 +39,7 @@ export default function Composer({
   return (
     <form
       onSubmit={submit}
-      className="glass liquid-sheen relative rounded-[28px] px-4 pt-3.5 pb-3 transition-shadow duration-200 focus-within:shadow-[0_10px_40px_rgba(8,145,178,0.18),0_0_0_3px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.9)]"
+      className="glass liquid-sheen relative rounded-[28px] px-4 pt-3.5 pb-3 transition-shadow duration-200 focus-within:shadow-[0_0_0_0.5px_rgba(15,23,42,0.08),0_18px_48px_-12px_rgba(15,23,42,0.18),0_0_0_3px_rgba(14,116,144,0.10),inset_0_1px_1px_rgba(255,255,255,1)]"
     >
       <textarea
         ref={ref}

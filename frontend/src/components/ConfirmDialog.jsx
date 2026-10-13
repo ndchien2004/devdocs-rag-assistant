@@ -15,7 +15,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, dang
     <dialog
       ref={ref}
       onCancel={onCancel}
-      className="glass-strong m-auto w-full max-w-sm rounded-3xl p-0 text-ink backdrop:bg-slate-900/25 backdrop:backdrop-blur-sm"
+      className="glass-strong m-auto w-full max-w-sm rounded-3xl p-0 text-ink backdrop:bg-slate-900/15 backdrop:backdrop-blur-sm"
     >
       <div className="px-5 pt-5 pb-4">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
