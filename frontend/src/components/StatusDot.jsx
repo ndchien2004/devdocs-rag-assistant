@@ -13,7 +13,7 @@ export default function StatusDot({ status, title }) {
     <span
       title={title ?? s.label}
       aria-label={s.label}
-      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${s.color}`}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ring-2 ring-white/80 ${s.color}`}
     />
   )
 }

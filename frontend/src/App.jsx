@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api } from './api/client.js'
 import DocumentSidebar from './components/DocumentSidebar.jsx'
 import LiquidBackground from './components/LiquidBackground.jsx'
+import { LoadingOverlay } from './components/Overlay.jsx'
 import ChatPage from './pages/ChatPage.jsx'
 const PdfViewer = lazy(() => import('./components/PdfViewer.jsx'))
 
@@ -141,7 +142,7 @@ export default function App() {
           onNewConversation={createConversation} onOpenPdf={openPdf}
         />
       </main>
-      {activePdf && <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/30 text-sm text-white backdrop-blur-sm">Đang tải trình xem PDF…</div>}><PdfViewer key={`${activePdf.documentId}-${activePdf.pageNumber}`} url={api.pdfUrl(activePdf.documentId)} fileName={activePdf.fileName} fileSize={documents.find((d) => d.id === activePdf.documentId)?.fileSize} initialPage={activePdf.pageNumber ?? 1} onClose={() => setActivePdf(null)} /></Suspense>}
+      {activePdf && <Suspense fallback={<LoadingOverlay>Đang tải trình xem PDF…</LoadingOverlay>}><PdfViewer key={`${activePdf.documentId}-${activePdf.pageNumber}`} url={api.pdfUrl(activePdf.documentId)} fileName={activePdf.fileName} fileSize={documents.find((d) => d.id === activePdf.documentId)?.fileSize} initialPage={activePdf.pageNumber ?? 1} onClose={() => setActivePdf(null)} /></Suspense>}
     </div>
   )
 }

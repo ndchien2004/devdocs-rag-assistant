@@ -69,7 +69,7 @@ export function IconButton({ label, onClick, children, className = '', small = f
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className={`grid shrink-0 place-items-center rounded-lg text-ink-soft transition hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40 ${
+      className={`grid shrink-0 place-items-center rounded-full text-ink-soft transition hover:bg-white/70 hover:text-ink hover:shadow-[inset_0_1px_0_#fff,0_1px_4px_rgba(15,23,42,0.06)] disabled:pointer-events-none disabled:opacity-40 ${
         small ? 'h-7 w-7' : 'h-8 w-8'
       } ${className}`}
     >

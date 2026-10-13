@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { XIcon } from './icons.jsx'
+import { Portal } from './Overlay.jsx'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -77,25 +78,26 @@ export default function PdfViewer({ file, url, fileName, fileSize, initialPage =
     return () => { alive = false; renderTask?.cancel() }
   }, [pdf, page, zoom, width])
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-2 sm:p-6" role="dialog" aria-modal="true" aria-label="Xem PDF" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-    <div className="flex h-full max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-canvas shadow-2xl">
-      <header className="flex min-h-14 items-center justify-between gap-3 border-b border-line px-3 sm:px-5">
-        <div className="min-w-0"><p className="truncate text-sm font-medium">{fileName ?? file?.name ?? 'Tài liệu PDF'}</p><p className="text-xs text-muted">{fileSize || file?.size ? `${((fileSize ?? file.size) / (1024 * 1024)).toFixed(2)} MB · ` : ''}{pages ? `${pages} trang` : 'Đang đọc PDF…'}</p></div>
+  // Portal: sidebar / khung upload là panel kính (backdrop-filter) — modal phải thoát ra khỏi chúng.
+  return <Portal><div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-2 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Xem PDF" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="glass-strong flex h-full max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl">
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-line px-3 sm:px-6">
+        <div className="min-w-0"><p className="truncate text-sm font-semibold">{fileName ?? file?.name ?? 'Tài liệu PDF'}</p><p className="text-xs text-muted">{fileSize || file?.size ? `${((fileSize ?? file.size) / (1024 * 1024)).toFixed(2)} MB · ` : ''}{pages ? `${pages} trang` : 'Đang đọc PDF…'}</p></div>
         <div className="flex shrink-0 items-center gap-1.5 text-sm">
-          <button type="button" disabled={page <= 1} onClick={() => setPage((n) => Math.max(1, n - 1))} aria-label="Trang trước" className="rounded-md border border-line px-2 py-1 disabled:opacity-40">‹</button>
+          <button type="button" disabled={page <= 1} onClick={() => setPage((n) => Math.max(1, n - 1))} aria-label="Trang trước" className="grid h-8 min-w-8 place-items-center rounded-full border border-line bg-white/70 px-2 transition hover:bg-white disabled:opacity-40">‹</button>
           <span className="min-w-16 text-center tabular-nums">{page} / {pages || '—'}</span>
-          <button type="button" disabled={!pages || page >= pages} onClick={() => setPage((n) => Math.min(pages, n + 1))} aria-label="Trang sau" className="rounded-md border border-line px-2 py-1 disabled:opacity-40">›</button>
-          <button type="button" onClick={() => setZoom((n) => Math.max(0.6, +(n - 0.15).toFixed(2)))} aria-label="Thu nhỏ" className="ml-1 rounded-md border border-line px-2 py-1">−</button>
+          <button type="button" disabled={!pages || page >= pages} onClick={() => setPage((n) => Math.min(pages, n + 1))} aria-label="Trang sau" className="grid h-8 min-w-8 place-items-center rounded-full border border-line bg-white/70 px-2 transition hover:bg-white disabled:opacity-40">›</button>
+          <button type="button" onClick={() => setZoom((n) => Math.max(0.6, +(n - 0.15).toFixed(2)))} aria-label="Thu nhỏ" className="ml-1 grid h-8 min-w-8 place-items-center rounded-full border border-line bg-white/70 px-2 transition hover:bg-white">−</button>
           <span className="w-10 text-center text-xs">{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => setZoom((n) => Math.min(2.5, +(n + 0.15).toFixed(2)))} aria-label="Phóng to" className="rounded-md border border-line px-2 py-1">+</button>
-          <button type="button" onClick={onClose} aria-label="Đóng PDF" className="ml-1 rounded-md p-1.5 hover:bg-hover"><XIcon className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setZoom((n) => Math.min(2.5, +(n + 0.15).toFixed(2)))} aria-label="Phóng to" className="grid h-8 min-w-8 place-items-center rounded-full border border-line bg-white/70 px-2 transition hover:bg-white">+</button>
+          <button type="button" onClick={onClose} aria-label="Đóng PDF" className="ml-1 grid h-8 w-8 place-items-center rounded-full transition hover:bg-white"><XIcon className="h-4 w-4" /></button>
         </div>
       </header>
       <div ref={stageRef} className="min-h-0 flex-1 overflow-auto p-3 sm:p-5">
         {loading && <p role="status" className="py-8 text-center text-sm text-muted">Đang mở PDF…</p>}
-        {error && <p role="alert" className="mx-auto mt-8 max-w-md rounded-lg border border-danger/25 bg-danger/5 p-4 text-sm text-danger">{error}</p>}
-        {!loading && !error && <canvas ref={canvasRef} className="mx-auto shadow-md" />}
+        {error && <p role="alert" className="mx-auto mt-8 max-w-md rounded-2xl border border-danger/20 bg-rose-50/80 p-4 text-sm text-danger">{error}</p>}
+        {!loading && !error && <canvas ref={canvasRef} className="mx-auto rounded-xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.12)]" />}
       </div>
     </div>
-  </div>
+  </div></Portal>
 }
