@@ -35,7 +35,7 @@ export default function SourceList({ messageId, sources, openIndex, onToggle, on
       </div>
 
       {open && (
-        <div data-role="source-snippet" className="mt-2.5 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm shadow-[inset_0_1px_0_#fff]">
+        <div data-role="source-snippet" className="mt-2.5 rounded-2xl border border-slate-900/[0.06] bg-white/30 px-4 py-3 text-sm shadow-[inset_0_1px_0_#fff]">
           <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted">
             <span>
               <span className="font-medium text-ink-soft">{open.fileName}</span> — {location(open)}

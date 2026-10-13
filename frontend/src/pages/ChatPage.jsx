@@ -163,9 +163,9 @@ export default function ChatPage({ conversation, messages, indexedCount, docsLoa
     </div>
   }
 
-  return <div className="flex h-full flex-col">
-    <ChatHeader title={conversation.title}>{scope}{newChat}</ChatHeader>
-    <div className="min-h-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-3xl space-y-6 px-4 pt-6 pb-8">
+  // Thanh tiêu đề và khung nhập nổi phía trên vùng cuộn: tin nhắn trôi xuyên dưới lớp kính.
+  return <div className="relative h-full">
+    <div className="chat-scroll absolute inset-0 overflow-y-auto"><div className="mx-auto max-w-3xl space-y-6 px-4 pt-20 pb-44">
       {allMessages.map((m) => m.role === 'user'
         ? <div key={m.id} className="flex justify-end"><div className="bg-bubble max-w-[85%] rounded-3xl rounded-br-lg border border-white/80 px-4.5 py-2.5 leading-relaxed whitespace-pre-wrap text-ink shadow-[0_0_0_0.5px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md">{m.text}</div></div>
         : m.role === 'error' ? <div key={m.id} className="rounded-2xl border border-danger/20 bg-rose-50/80 px-4 py-3 text-sm text-danger backdrop-blur-md">{m.text}</div>
@@ -173,6 +173,7 @@ export default function ChatPage({ conversation, messages, indexedCount, docsLoa
       {sending && !streamingAnswer && <Thinking />}{localError && <p role="alert" className="rounded-2xl border border-danger/20 bg-rose-50/80 px-4 py-3 text-sm text-danger backdrop-blur-md">{localError}</p>}{error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <div ref={bottomRef} />
     </div></div>
-    <div className="mx-auto w-full max-w-3xl shrink-0 px-4">{composer}<Disclaimer /></div>
+    <div className="absolute inset-x-0 top-0 z-20"><ChatHeader title={conversation.title}>{scope}{newChat}</ChatHeader></div>
+    <div className="absolute inset-x-0 bottom-0 z-10 mx-auto w-full max-w-3xl px-4">{composer}<Disclaimer /></div>
   </div>
 }
