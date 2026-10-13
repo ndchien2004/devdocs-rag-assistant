@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
-/* Bảng màu ấm, tối giản (nền kem, chữ gần đen, nhấn cam đất) */
+/* Liquid glass: nền trắng lạnh, panel kính mờ, nhấn cyan. Màu đi qua token theo vai trò → component không cần biết mã màu. */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-serif: "Source Serif 4", ui-serif, Georgia, Cambria, "Times New Roman", serif;
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
 
-  --color-canvas: #faf9f5;
-  --color-panel: #f3f1ea;
-  --color-hover: #e9e6dc;
-  --color-bubble: #eeece3;
-  --color-line: #e6e3d8;
-  --color-line-strong: #d6d2c4;
-  --color-ink: #1f1e1d;
-  --color-ink-soft: #4a4944;
-  --color-muted: #8a8880;
-  --color-accent: #c96442;
-  --color-accent-strong: #ae5234;
-  --color-accent-soft: #f6e9e2;
-  --color-success: #5a8a58;
-  --color-warn: #c28a2c;
-  --color-danger: #b5452f;
+  --color-canvas: #f5f9fc;
+  --color-panel: rgb(255 255 255 / 0.6);
+  --color-hover: rgb(14 165 233 / 0.08);
+  --color-bubble: rgb(8 145 178 / 0.1);
+  --color-line: rgb(15 23 42 / 0.08);
+  --color-line-strong: rgb(15 23 42 / 0.14);
+  --color-ink: #0f172a;
+  --color-ink-soft: #334155;
+  --color-muted: #64748b;
+  --color-accent: #0891b2;
+  --color-accent-strong: #0e7490;
+  --color-accent-soft: #e0f7fb;
+  --color-accent-2: #0ea5e9;
+  --color-success: #10b981;
+  --color-warn: #d97706;
+  --color-danger: #e11d48;
 }
 
 html,
@@ -28,6 +28,140 @@ body {
   background: var(--color-canvas);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- kính */
+
+/* Panel lớn: sidebar, khung nhập, thanh tiêu đề. Viền sáng bên trong = cạnh "phản quang" của liquid glass. */
+@utility glass {
+  background: rgb(255 255 255 / 0.55);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  box-shadow:
+    0 8px 32px rgb(15 23 42 / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    inset 0 -1px 0 rgb(255 255 255 / 0.3);
+}
+
+/* Thẻ nhỏ: bong bóng chat, thẻ câu trả lời, pill nguồn. */
+@utility glass-thin {
+  background: rgb(255 255 255 / 0.5);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgb(255 255 255 / 0.65);
+  box-shadow: 0 2px 12px rgb(15 23 42 / 0.05), inset 0 1px 0 rgb(255 255 255 / 0.85);
+}
+
+/* Popup / dialog cần đọc rõ. */
+@utility glass-strong {
+  background: rgb(255 255 255 / 0.82);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 0.8);
+  box-shadow: 0 24px 64px rgb(15 23 42 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.95);
+}
+
+/* Vệt phản quang chéo góc trên-trái — bề mặt cong như giọt nước. Phần tử cần position khác static. */
+@utility liquid-sheen {
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 80% at 0% 0%, rgb(255 255 255 / 0.65), transparent 55%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.25), transparent 40%);
+  }
+}
+
+/* Nút chính: viên cyan bo tròn, nhấc nhẹ khi hover. */
+@utility btn-cyan {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee 0%, var(--color-accent-2) 45%, var(--color-accent) 100%);
+  border-radius: 9999px;
+  box-shadow:
+    0 6px 18px rgb(8 145 178 / 0.28),
+    inset 0 1px 0 rgb(255 255 255 / 0.45),
+    inset 0 -1px 0 rgb(14 116 144 / 0.35);
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease, opacity 160ms ease;
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px rgb(8 145 178 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.5);
+  }
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+    filter: saturate(0.6);
+    box-shadow: none;
+  }
+}
+
+/* Nút / ô chọn phụ dạng viên kính. */
+@utility chip {
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.55);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgb(255 255 255 / 0.75);
+  box-shadow: 0 1px 6px rgb(15 23 42 / 0.05), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  &:hover:not(:disabled) {
+    border-color: rgb(8 145 178 / 0.35);
+    background: rgb(255 255 255 / 0.75);
+  }
+}
+
+/* Trình duyệt không có backdrop-filter → kính đặc hơn để chữ vẫn đọc rõ. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, .glass-thin, .chip { background: rgb(255 255 255 / 0.88); }
+  .glass-strong { background: rgb(255 255 255 / 0.96); }
+}
+
+/* Vòng focus thống nhất khi điều hướng bằng bàn phím. */
+:where(button, a, select, input, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- nền lỏng */
+
+.liquid-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(160deg, #f8fbfe 0%, #eef6fb 55%, #f4f3fd 100%);
+}
+/* Đốm màu vẽ bằng radial-gradient rìa trong suốt (không dùng filter: blur — rất tốn GPU), trôi bằng transform. */
+.liquid-blob {
+  position: absolute;
+  width: 62vmax;
+  height: 62vmax;
+  border-radius: 9999px;
+  will-change: transform;
+  animation: liquid-drift var(--drift, 60s) ease-in-out infinite alternate;
+}
+.liquid-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@keyframes liquid-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(var(--dx, 8vw), var(--dy, 6vh), 0) scale(1.12); }
+  100% { transform: translate3d(calc(var(--dx, 8vw) * -0.6), calc(var(--dy, 6vh) * 1.2), 0) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liquid-blob { animation: none; }
 }
 
 /* Nội dung Markdown trong câu trả lời */
@@ -62,9 +196,10 @@ body {
 }
 .markdown pre {
   margin: 0.9rem 0;
-  border: 1px solid var(--color-line);
-  border-radius: 0.75rem;
-  background: #fff;
+  border: 1px solid rgb(255 255 255 / 0.8);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.8);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 4px rgb(15 23 42 / 0.04);
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 0.84rem;
@@ -77,7 +212,7 @@ body {
 .markdown :not(pre) > code {
   font-family: var(--font-mono);
   background: var(--color-bubble);
-  border-radius: 0.3rem;
+  border-radius: 0.4rem;
   padding: 0.08rem 0.32rem;
   font-size: 0.86em;
 }

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api/client.js'
 import DocumentSidebar from './components/DocumentSidebar.jsx'
+import LiquidBackground from './components/LiquidBackground.jsx'
 import ChatPage from './pages/ChatPage.jsx'
 const PdfViewer = lazy(() => import('./components/PdfViewer.jsx'))
 
@@ -122,7 +123,8 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas font-sans text-ink">
+    <div className="relative isolate flex h-screen gap-3 overflow-hidden p-3 font-sans text-ink">
+      <LiquidBackground />
       <DocumentSidebar
         mode={sidebarMode} onModeChange={changeSidebarMode} documents={documents} loading={docsLoading}
         error={docsError} onChanged={refreshDocuments} conversations={conversations}
@@ -139,7 +141,7 @@ export default function App() {
           onNewConversation={createConversation} onOpenPdf={openPdf}
         />
       </main>
-      {activePdf && <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 text-sm text-white">Đang tải trình xem PDF…</div>}><PdfViewer key={`${activePdf.documentId}-${activePdf.pageNumber}`} url={api.pdfUrl(activePdf.documentId)} fileName={activePdf.fileName} fileSize={documents.find((d) => d.id === activePdf.documentId)?.fileSize} initialPage={activePdf.pageNumber ?? 1} onClose={() => setActivePdf(null)} /></Suspense>}
+      {activePdf && <Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/30 text-sm text-white backdrop-blur-sm">Đang tải trình xem PDF…</div>}><PdfViewer key={`${activePdf.documentId}-${activePdf.pageNumber}`} url={api.pdfUrl(activePdf.documentId)} fileName={activePdf.fileName} fileSize={documents.find((d) => d.id === activePdf.documentId)?.fileSize} initialPage={activePdf.pageNumber ?? 1} onClose={() => setActivePdf(null)} /></Suspense>}
     </div>
   )
 }
