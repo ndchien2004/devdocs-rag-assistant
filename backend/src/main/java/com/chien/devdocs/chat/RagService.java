@@ -4,6 +4,7 @@ import com.chien.devdocs.chat.dto.ChatRequest;
 import com.chien.devdocs.chat.dto.ChatResponse;
 import com.chien.devdocs.chat.dto.SourceDto;
 import com.chien.devdocs.common.exception.AiServiceUnavailableException;
+import com.chien.devdocs.common.exception.GlobalExceptionHandler;
 import com.chien.devdocs.config.RagProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,10 +12,16 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.text.Normalizer;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 
 /**
  * Phase 2 — RAG "thủ công" (mục 7.2): tự retrieve, tự ghép prompt, tự gọi LLM, tự map nguồn.
@@ -109,6 +116,78 @@ public class RagService {
         long total = System.currentTimeMillis() - p.startMs();
         saveLog(p, found, llmMs, total);                                                     // [7]
         return new RagAnswer(answer, found, sources, total, true, p.hits().size());
+    }
+
+    /**
+     * Phiên bản streaming của {@link #answer}: cùng các bước, nhưng câu trả lời của LLM được đẩy ra từng mẩu.
+     * <p>
+     * Retrieval ({@link #prepare}) chạy <b>đồng bộ</b> trước khi trả Flux: lỗi ở bước này (Ollama tắt → 503) vẫn
+     * thành HTTP status bình thường, vì khi stream đã bắt đầu thì status 200 đã được gửi đi. Không có chunk nào →
+     * chỉ một sự kiện {@code done}, không gọi LLM (BR-QRY-03).
+     * <p>
+     * Khi client ngắt kết nối, Spring MVC hủy subscription → lời gọi Ollama bị hủy theo; câu hỏi vẫn được ghi log.
+     */
+    public Flux<RagStreamEvent> stream(ChatRequest request) {
+        Prepared p = prepare(request);
+        if (!p.hasContext()) {
+            return Flux.just(new RagStreamEvent.Done(notFound(p).toResponse()));
+        }
+        List<Document> chunks = p.context().chunks();
+        List<SourceDto> candidates = IntStream.range(0, chunks.size())
+                .mapToObj(i -> sourceMapper.toDto(i + 1, chunks.get(i)))
+                .toList();
+
+        StringBuilder answer = new StringBuilder();
+        AtomicBoolean finished = new AtomicBoolean();
+        long llmStart = System.currentTimeMillis();
+
+        Flux<RagStreamEvent> tokens = chatClient.prompt()
+                .system(systemPrompt)
+                .user(u -> u.text(userPrompt)
+                        .param("context", p.context().text())
+                        .param("question", p.question()))
+                .stream()
+                .content()
+                .filter(Objects::nonNull)
+                .doOnNext(answer::append)
+                .map(RagStreamEvent.Token::new);
+
+        Mono<RagStreamEvent> done = Mono.fromCallable(() -> {
+            finished.set(true);
+            long llmMs = System.currentTimeMillis() - llmStart;
+            log.info("LLM (stream): {} context chunks → {} chars answer in {} ms", chunks.size(),
+                    answer.length(), llmMs);
+            return new RagStreamEvent.Done(finish(p, answer.toString().strip(), llmMs).toResponse());
+        });
+
+        return Flux.concat(Mono.just(new RagStreamEvent.Sources(candidates)), tokens, done)
+                .onErrorResume(e -> {
+                    if (finished.compareAndSet(false, true)) {
+                        saveIncomplete(p, llmStart);
+                    }
+                    return Mono.just(new RagStreamEvent.Failed(problemFor(e)));
+                })
+                .doOnCancel(() -> {
+                    if (finished.compareAndSet(false, true)) {
+                        log.info("LLM (stream): cancelled by client after {} chars", answer.length());
+                        saveIncomplete(p, llmStart);
+                    }
+                });
+    }
+
+    /** Stream bị hủy hoặc lỗi giữa chừng: vẫn ghi log (BR-QRY-07), coi như không có câu trả lời. */
+    private void saveIncomplete(Prepared p, long llmStart) {
+        long now = System.currentTimeMillis();
+        saveLog(p, false, now - llmStart, now - p.startMs());
+    }
+
+    private static ProblemDetail problemFor(Throwable e) {
+        if (AiServiceUnavailableException.isConnectivityProblem(e)) {
+            log.warn("LLM (stream) unavailable: {}", e.getMessage());
+            return new AiServiceUnavailableException(e).getBody();
+        }
+        log.error("LLM (stream) failed", e);
+        return GlobalExceptionHandler.internalError();
     }
 
     private String callLlm(String context, String question) {
