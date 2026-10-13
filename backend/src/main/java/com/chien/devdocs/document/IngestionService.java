@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -81,8 +82,9 @@ public class IngestionService {
         // [2] Chống nạp trùng (BR-ING-02)
         String checksum = sha256(content);
         Optional<SourceDocument> existing = repository.findByChecksum(checksum);
-        if (existing.isPresent() && existing.get().getStatus() == DocumentStatus.INDEXED) {
-            throw new DuplicateDocumentException(existing.get().getId());
+        if (existing.isPresent() && existing.get().getStatus() != DocumentStatus.FAILED) {
+            // INDEXED → trùng; PENDING / PROCESSING → request khác đang index, không index chồng lên.
+            throw duplicateOf(existing.get());
         }
 
         // [3] Lưu bản ghi PENDING + file vật lý. Bản ghi cũ FAILED (cùng checksum) được dùng lại.
@@ -97,7 +99,13 @@ public class IngestionService {
             String path = storage.save(id, type, content).toString();
             doc = new SourceDocument(id, fileName, type.canonicalContentType(), content.length, checksum, topic, path);
         }
-        doc = repository.save(doc);
+        try {
+            doc = repository.save(doc);
+        } catch (DataIntegrityViolationException e) {
+            // Hai request cùng file chạy song song: cả hai qua bước [2], request sau đụng uq_documents_checksum.
+            storage.delete(doc.getStoragePath());
+            throw repository.findByChecksum(checksum).map(IngestionService::duplicateOf).orElseThrow(() -> e);
+        }
 
         return index(doc);
     }
@@ -163,6 +171,12 @@ public class IngestionService {
             }
             return doc;
         }
+    }
+
+    private static DuplicateDocumentException duplicateOf(SourceDocument existing) {
+        return existing.getStatus() == DocumentStatus.INDEXED
+                ? new DuplicateDocumentException(existing.getId())
+                : DuplicateDocumentException.inProgress(existing.getId());
     }
 
     private void deleteChunks(UUID documentId) {

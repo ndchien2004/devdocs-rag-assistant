@@ -7,7 +7,17 @@ import java.util.UUID;
 public class DuplicateDocumentException extends ApiException {
 
     public DuplicateDocumentException(UUID existingDocumentId) {
-        super(HttpStatus.CONFLICT, "Duplicate document", "File này đã được index trước đó.");
+        this(existingDocumentId, "File này đã được index trước đó.");
+    }
+
+    private DuplicateDocumentException(UUID existingDocumentId, String detail) {
+        super(HttpStatus.CONFLICT, "Duplicate document", detail);
         getBody().setProperty("existingDocumentId", existingDocumentId);
+    }
+
+    /** Cùng file đang được một request khác index (PENDING / PROCESSING). */
+    public static DuplicateDocumentException inProgress(UUID existingDocumentId) {
+        return new DuplicateDocumentException(existingDocumentId,
+                "File này đang được xử lý. Nếu bị kẹt, hãy gọi /reindex với existingDocumentId.");
     }
 }
