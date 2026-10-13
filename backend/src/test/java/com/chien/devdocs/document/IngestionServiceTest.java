@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.client.ResourceAccessException;
@@ -153,6 +154,41 @@ class IngestionServiceTest {
                 .isInstanceOf(DuplicateDocumentException.class)
                 .satisfies(e -> assertThat(((DuplicateDocumentException) e).getBody().getProperties())
                         .containsEntry("existingDocumentId", existing.getId()));
+        verify(vectorStore, never()).add(anyList());
+    }
+
+    @Test
+    void duplicateOfDocumentStillBeingProcessedIsRejectedWithoutIndexingTwice() {
+        SourceDocument processing = new SourceDocument(java.util.UUID.randomUUID(), "old.md", "text/markdown",
+                10, "x", Topic.SPRING, "p");
+        processing.markProcessing();
+        when(repository.findByChecksum(any())).thenReturn(Optional.of(processing));
+
+        assertThatThrownBy(() -> service.upload(markdown("again.md", MARKDOWN), Topic.SPRING))
+                .isInstanceOf(DuplicateDocumentException.class)
+                .hasMessageContaining("đang được xử lý")
+                .satisfies(e -> assertThat(((DuplicateDocumentException) e).getBody().getProperties())
+                        .containsEntry("existingDocumentId", processing.getId()));
+        verify(repository, never()).save(any());
+        verify(vectorStore, never()).add(anyList());
+    }
+
+    @Test
+    void concurrentUploadLosingTheUniqueChecksumRaceIs409AndLeavesNoOrphanFile() throws Exception {
+        SourceDocument winner = new SourceDocument(java.util.UUID.randomUUID(), "a.md", "text/markdown",
+                10, "x", Topic.SPRING, "p");
+        winner.markProcessing();
+        // Bước [2] chưa thấy bản ghi nào; tới lúc save thì request kia đã insert trước.
+        when(repository.findByChecksum(any())).thenReturn(Optional.empty(), Optional.of(winner));
+        when(repository.save(any())).thenThrow(new DataIntegrityViolationException("uq_documents_checksum"));
+
+        assertThatThrownBy(() -> service.upload(markdown("a.md", MARKDOWN), Topic.SPRING))
+                .isInstanceOf(DuplicateDocumentException.class)
+                .satisfies(e -> assertThat(((DuplicateDocumentException) e).getBody().getProperties())
+                        .containsEntry("existingDocumentId", winner.getId()));
+        try (var files = java.nio.file.Files.list(storageDir)) {
+            assertThat(files).isEmpty();
+        }
         verify(vectorStore, never()).add(anyList());
     }
 
