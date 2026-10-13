@@ -95,7 +95,8 @@ export default function ChatPage({ messages, setMessages, indexedCount, docsLoad
         upsert(() => ({ streaming: false, stopped: true, found: true }))
         return
       }
-      upsert(() => ({ streaming: false }))
+      // Lỗi giữa chừng: giữ phần chữ đã nhận (nếu có); thông báo lỗi do ask() hiển thị ngay sau.
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, streaming: false, interrupted: true } : m)))
       throw err
     }
   }
